@@ -1,0 +1,30 @@
+# LID can create config.yaml from the first-run setup screen.
+server:
+  host: 127.0.0.1
+  port: 8000
+storage:
+  downloads: ./downloads
+  completed: null
+  state: ./data
+direct:
+  port: 51413
+  upnp: true
+proxy:
+  enabled: false
+  host: ""
+  port: 1080
+  username: ""
+  password: ""
+  udp: auto
+  timeout: 5
+  check_interval: 30
+  dns_server: 1.1.1.1
+  dht_bootstrap:
+    - dht.libtorrent.org:25401
+    - router.bittorrent.com:6881
+seeding:
+  upload_limit: 0
+  download_limit: 0
+  connections: 500
+  file_pool_size: 100
+  save_interval: 30

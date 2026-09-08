@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#101113" />
+    <title>LID — Linux ISO Downloader</title>
+    <link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/static/style.css" />
+    <script src="/static/app.js" type="module"></script>
+  </head>
+  <body>
+    <header class="header">
+      <a class="brand" href="/" aria-label="LID, home" data-i18n-aria="app.home"
+        ><svg viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M6 8v16M16 4v24M26 8v16" /></svg
+        ><span>LID<span class="brand-dot">.</span></span></a
+      >
+      <span class="header-label" data-i18n="header.tagline"
+        >Linux ISO Downloader</span
+      >
+      <button id="language-toggle" class="language-toggle" type="button">
+        <span data-language="en" class="active">EN</span
+        ><i aria-hidden="true"></i><span data-language="fr">FR</span>
+      </button>
+      <button
+        id="proxy-status"
+        class="status-button"
+        aria-label="Proxy status"
+        data-i18n-aria="header.proxy"
+      >
+        <span class="dot checking" id="proxy-dot"></span
+        ><span id="proxy-short">Checking proxy</span
+        ><span class="chevron">↗</span>
+      </button>
+    </header>
+
+    <main>
+      <section class="page-heading">
+        <div>
+          <span class="eyebrow" data-i18n="dashboard">DASHBOARD</span>
+          <h1>
+            <span data-i18n="transfers">Transfers</span
+            ><span class="heading-dot">.</span>
+          </h1>
+        </div>
+        <button class="button primary" id="add-button">
+          <span class="add-icon" aria-hidden="true">＋</span
+          ><span data-i18n="add.open">Add a torrent</span>
+        </button>
+      </section>
+      <section
+        class="metrics"
+        aria-label="Global activity"
+        data-i18n-aria="metrics.activity"
+      >
+        <div class="metric">
+          <span class="metric-label"
+            ><span class="metric-icon blue">↓</span
+            ><span data-i18n="metrics.download">Download</span></span
+          ><strong id="total-down">0 <small>B/s</small></strong
+          ><span class="metric-note" data-i18n="metrics.download_note"
+            >Download speed</span
+          >
+        </div>
+        <div class="metric">
+          <span class="metric-label"
+            ><span class="metric-icon red">↑</span
+            ><span data-i18n="metrics.upload">Upload</span></span
+          ><strong id="total-up">0 <small>B/s</small></strong
+          ><span class="metric-note" data-i18n="metrics.upload_note"
+            >Sharing speed</span
+          >
+        </div>
+        <div class="metric">
+          <span class="metric-label"
+            ><span class="metric-icon neutral">↗</span
+            ><span data-i18n="metrics.seeding">Seeding</span></span
+          ><strong id="total-seeding">0 <small>torrent</small></strong
+          ><span class="metric-note" data-i18n="metrics.seeding_note"
+            >Continuous seeding with no ratio limit</span
+          >
+        </div>
+        <div class="metric">
+          <span class="metric-label"
+            ><span class="metric-icon neutral">÷</span
+            ><span data-i18n="metrics.ratio">Global ratio</span></span
+          ><strong id="global-ratio">0.00</strong
+          ><span class="metric-note" data-i18n="metrics.ratio_note"
+            >Total uploaded / downloaded</span
+          >
+        </div>
+      </section>
+
+      <section class="transfers" aria-labelledby="list-title">
+        <div class="list-heading">
+          <h2 id="list-title">
+            <span data-i18n="list.title">My torrents</span>
+            <span id="torrent-count" class="count">0</span>
+          </h2>
+          <div class="route-legend">
+            <span
+              ><i class="blue-bg"></i
+              ><span data-i18n="list.direct">Direct</span></span
+            ><span
+              ><i class="red-bg"></i
+              ><span data-i18n="list.proxy">Proxy</span></span
+            >
+          </div>
+        </div>
+        <div
+          id="connection-error"
+          class="inline-error"
+          role="status"
+          hidden
+        ></div>
+        <div id="empty" class="empty">
+          <div class="empty-art" aria-hidden="true">
+            <svg viewBox="0 0 72 72">
+              <path
+                d="M36 13v31m-11-11 11 11 11-11M15 44v11a5 5 0 0 0 5 5h32a5 5 0 0 0 5-5V44"
+              /></svg
+            ><span class="empty-orbit blue-orbit"></span
+            ><span class="empty-orbit red-orbit"></span>
+          </div>
+          <h3 data-i18n="empty.title">Room for your next torrents.</h3>
+          <p data-i18n="empty.text">Drop a file here, then choose its route.</p>
+          <div class="empty-routes">
+            <span
+              ><i class="blue-bg"></i
+              ><span data-i18n="empty.left">Left for direct</span></span
+            ><span
+              ><i class="red-bg"></i
+              ><span data-i18n="empty.right">Right through proxy</span></span
+            >
+          </div>
+          <button class="text-button" id="empty-add">
+            <span data-i18n="empty.add">or add a file / magnet link</span>
+            <span aria-hidden="true">↗</span>
+          </button>
+        </div>
+        <div class="table-labels" id="table-labels" hidden>
+          <span data-i18n="list.torrent">TORRENT</span
+          ><span data-i18n="list.progress">PROGRESS</span
+          ><span data-i18n="list.transfer">DOWNLOAD / UPLOAD</span
+          ><span data-i18n="list.actions">ACTIONS</span>
+        </div>
+        <div
+          id="torrent-list"
+          aria-label="Torrent list"
+          data-i18n-aria="list.aria"
+        ></div>
+      </section>
+      <footer class="footer">
+        <span
+          ><span class="tiny-dot" id="live-dot"></span
+          ><span id="live-label" data-i18n="footer.connecting"
+            >Connecting to the application…</span
+          ></span
+        ><span data-i18n="footer.tagline">Two routes. One space.</span
+        ><button
+          id="storage-button"
+          class="text-button"
+          data-i18n="settings.open"
+        >
+          Settings ↗
+        </button>
+      </footer>
+    </main>
+
+    <div id="drop-overlay" class="drop-overlay" hidden>
+      <div class="drop-zone direct-zone" data-drop-mode="direct">
+        <div class="drop-inner">
+          <span class="drop-number">01 / DIRECT</span>
+          <div class="drop-icon">↓</div>
+          <h2 data-i18n="drop.direct_title">Download directly</h2>
+          <p data-i18n="drop.direct_text">Uses your Internet connection.</p>
+          <span class="drop-action"
+            ><span data-i18n="drop.left">Drop on the left</span
+            ><span>↙</span></span
+          >
+        </div>
+      </div>
+      <div class="drop-zone proxy-zone" data-drop-mode="proxy">
+        <div class="drop-inner">
+          <span class="drop-number">02 / PROXY SOCKS5</span>
+          <div class="drop-icon">↘</div>
+          <h2 data-i18n="drop.proxy_title">Download through proxy</h2>
+          <p data-i18n="drop.proxy_text">
+            Transfer exclusively through the proxy.
+          </p>
+          <span class="drop-action"
+            ><span data-i18n="drop.right">Drop on the right</span
+            ><span>↘</span></span
+          >
+        </div>
+      </div>
+      <span class="drop-hint" data-i18n="drop.hint"
+        >.torrent · Release the file in the route you want</span
+      >
+    </div>
+
+    <dialog id="add-dialog">
+      <div class="dialog-heading">
+        <div>
+          <span class="eyebrow" data-i18n="add.eyebrow">NEW TRANSFER</span>
+          <h2 data-i18n="add.title">Choose a route.</h2>
+        </div>
+        <button class="icon-button dialog-close" aria-label="Close" data-i18n-aria="add.close">✕</button>
+      </div>
+      <div
+        class="mode-picker"
+        aria-label="Transfer mode"
+        data-i18n-aria="add.mode_aria"
+      >
+        <button
+          class="mode-choice direct-choice"
+          data-mode="direct"
+          aria-pressed="false"
+        >
+          <span class="choice-icon">↓</span><strong>Direct</strong
+          ><span data-i18n="add.direct_note"
+            >Your Internet connection</span
+          ></button
+        ><button
+          class="mode-choice proxy-choice"
+          data-mode="proxy"
+          aria-pressed="false"
+        >
+          <span class="choice-icon">↘</span><strong>Proxy</strong
+          ><span id="proxy-choice-address">SOCKS5</span>
+        </button>
+      </div>
+      <p class="mode-help" id="mode-help" data-i18n="add.mode_help">
+        The route is preserved during download and seeding.
+      </p>
+      <button class="button file-button" id="pick-files" disabled>
+        <span>＋</span><span data-i18n="add.files">Choose .torrent files</span>
+      </button>
+      <input
+        type="file"
+        id="file-input"
+        accept=".torrent,application/x-bittorrent"
+        multiple
+        hidden
+      />
+      <div class="divider">
+        <span data-i18n="add.or_magnet">OR A MAGNET LINK</span>
+      </div>
+      <form id="magnet-form">
+        <label for="magnet-input" class="sr-only" data-i18n="add.magnet_label"
+          >Magnet link</label
+        ><input
+          id="magnet-input"
+          type="text"
+          placeholder="magnet:?xt=urn:btih:…"
+          autocomplete="off"
+          spellcheck="false"
+          required
+          maxlength="32768"
+        /><button
+          type="submit"
+          id="magnet-submit"
+          class="button primary"
+          disabled
+        >
+          <span data-i18n="add.magnet">Add link</span><span>↗</span>
+        </button>
+      </form>
+      <p id="add-error" class="form-error" role="alert" hidden></p>
+    </dialog>
+
+    <dialog id="folders-dialog" class="settings-dialog" aria-labelledby="folders-title">
+      <div class="dialog-heading">
+        <div>
+          <span class="eyebrow" data-i18n="settings.eyebrow">CONFIGURATION</span>
+          <h2 id="folders-title" data-i18n="settings.title">LID settings.</h2>
+          <span class="sr-only" data-i18n="folders.title">Your folders.</span>
+        </div>
+        <div class="settings-heading-actions">
+          <button id="settings-language-toggle" class="language-toggle" type="button" data-i18n-aria="language.toggle">
+            <span data-language="en" class="active">EN</span><i aria-hidden="true"></i><span data-language="fr">FR</span>
+          </button>
+          <button class="icon-button dialog-close" aria-label="Close" data-i18n-aria="add.close">✕</button>
+        </div>
+      </div>
+      <div id="setup-banner" class="setup-banner" hidden>
+        <strong data-i18n="settings.welcome">Welcome to LID.</strong>
+        <span data-i18n="settings.setup_note">Torrent engines stay stopped until this configuration is saved.</span>
+      </div>
+      <nav class="settings-steps" aria-label="Configuration steps" data-i18n-aria="settings.steps_aria">
+        <button type="button" data-step-button="1" aria-current="step" data-i18n-aria="settings.step_storage"><b>1</b><span data-i18n="settings.step_storage">Storage</span></button>
+        <button type="button" data-step-button="2" data-i18n-aria="settings.step_connections"><b>2</b><span data-i18n="settings.step_connections">Connections</span></button>
+        <button type="button" data-step-button="3" data-i18n-aria="settings.step_performance"><b>3</b><span data-i18n="settings.step_performance">Performance</span></button>
+      </nav>
+      <form id="folder-settings-form">
+        <section class="settings-page" data-step="1">
+          <h3 data-i18n="settings.storage_title">Storage</h3>
+          <p class="mode-help" data-i18n="settings.storage_help">Choose folders on the machine running LID. They must be separate and cannot be symbolic links.</p>
+          <label for="downloads-folder" class="folder-label" data-i18n="folders.incoming">Downloads in progress</label>
+          <div class="folder-input-row"><input id="downloads-folder" type="text" required maxlength="4096" autocomplete="off" spellcheck="false" /><button class="button" type="button" data-browse-field="downloads-folder" data-i18n="folders.browse">Browse</button></div>
+          <label for="completed-folder" class="folder-label" data-i18n="folders.completed">Completed downloads</label>
+          <div class="folder-input-row"><input id="completed-folder" type="text" maxlength="4096" autocomplete="off" spellcheck="false" data-i18n-placeholder="folders.completed_placeholder" /><button class="button" type="button" data-browse-field="completed-folder" data-i18n="folders.browse">Browse</button></div>
+          <label class="folder-toggle"><input id="move-enabled" type="checkbox" disabled /><span data-i18n="folders.move">Move completed downloads</span></label>
+          <label for="state-folder" class="folder-label" data-i18n="settings.state_folder">Internal LID data</label>
+          <div class="folder-input-row"><input id="state-folder" type="text" required maxlength="4096" autocomplete="off" spellcheck="false" /><button class="button" type="button" data-browse-field="state-folder" data-i18n="folders.browse">Browse</button></div>
+          <p class="mode-help" data-i18n="settings.state_help">Changing this folder restarts LID and safely moves resume data and indexes.</p>
+        </section>
+
+        <section class="settings-page" data-step="2" hidden>
+          <h3 data-i18n="settings.connections_title">Connections</h3>
+          <div class="settings-grid">
+            <label><span data-i18n="settings.web_host">Local web address</span><select id="server-host"><option value="127.0.0.1">127.0.0.1 (IPv4)</option><option value="::1">::1 (IPv6)</option></select></label>
+            <label><span data-i18n="settings.web_port">Web port</span><input id="server-port" type="number" min="1024" max="65535" required /></label>
+            <label><span data-i18n="settings.direct_port">Direct TCP / UDP port</span><input id="direct-port" type="number" min="1024" max="65535" required /></label>
+            <label class="check-field"><input id="direct-upnp" type="checkbox" /><span data-i18n="settings.upnp">Enable UPnP for direct transfers</span></label>
+          </div>
+          <div class="settings-group proxy-settings">
+            <label class="folder-toggle"><input id="proxy-enabled" type="checkbox" /><span data-i18n="settings.proxy_enabled">Enable SOCKS5 proxy mode</span></label>
+            <div class="settings-grid" data-proxy-fields>
+              <label><span data-i18n="settings.proxy_host">Proxy host</span><input id="proxy-host" type="text" maxlength="253" /></label>
+              <label><span data-i18n="settings.proxy_port">Proxy port</span><input id="proxy-port" type="number" min="1" max="65535" /></label>
+              <label><span data-i18n="settings.proxy_username">Username</span><input id="proxy-username" type="text" autocomplete="username" /></label>
+              <label><span data-i18n="settings.proxy_password">Password</span><input id="proxy-password" type="password" autocomplete="new-password" data-i18n-placeholder="settings.password_keep" /></label>
+              <label><span data-i18n="settings.proxy_udp">UDP through proxy</span><select id="proxy-udp"><option value="auto" data-i18n="settings.udp_auto">Automatic, TCP fallback</option><option value="off" data-i18n="settings.udp_off">Disabled</option></select></label>
+              <label class="check-field"><input id="proxy-clear-password" type="checkbox" /><span data-i18n="settings.clear_password">Delete saved password</span></label>
+            </div>
+            <button class="button proxy-test" id="settings-proxy-test" type="button" data-i18n="settings.test_proxy">Test proxy</button>
+            <p id="settings-proxy-result" class="mode-help" role="status"></p>
+          </div>
+          <details class="advanced-settings">
+            <summary data-i18n="settings.advanced">Advanced</summary>
+            <div class="settings-grid">
+              <label><span data-i18n="settings.timeout">Proxy timeout (seconds)</span><input id="proxy-timeout" type="number" min="0.2" max="60" step="0.1" required /></label>
+              <label><span data-i18n="settings.check_interval">Health check interval (seconds)</span><input id="proxy-check-interval" type="number" min="2" max="600" step="0.1" required /></label>
+              <label><span data-i18n="settings.dns_server">Remote DNS server</span><input id="proxy-dns" type="text" required /></label>
+              <label class="wide"><span data-i18n="settings.dht_nodes">DHT bootstrap nodes (one host:port per line)</span><textarea id="proxy-dht" rows="3"></textarea></label>
+            </div>
+          </details>
+        </section>
+
+        <section class="settings-page" data-step="3" hidden>
+          <h3 data-i18n="settings.performance_title">Performance and review</h3>
+          <p class="mode-help" data-i18n="settings.performance_help">Limits are in bytes per second. Use 0 for unlimited bandwidth.</p>
+          <div class="settings-grid">
+            <label><span data-i18n="settings.upload_limit">Upload limit (B/s)</span><input id="upload-limit" type="number" min="0" step="1" required /></label>
+            <label><span data-i18n="settings.download_limit">Download limit (B/s)</span><input id="download-limit" type="number" min="0" step="1" required /></label>
+            <label><span data-i18n="settings.connections">Connection limit</span><input id="connections-limit" type="number" min="10" max="10000" required /></label>
+            <label><span data-i18n="settings.file_pool">Open file pool</span><input id="file-pool-size" type="number" min="10" max="10000" required /></label>
+            <label><span data-i18n="settings.save_interval">Resume save interval (seconds)</span><input id="save-interval" type="number" min="1" max="600" step="0.1" required /></label>
+          </div>
+          <div id="settings-review" class="settings-review"></div>
+          <p id="settings-load-error" class="form-error" hidden></p>
+        </section>
+
+        <div class="settings-actions">
+          <button class="button" id="settings-previous" type="button" data-i18n="settings.previous" hidden>Previous</button>
+          <span></span>
+          <button class="button primary" id="settings-next" type="button" data-i18n="settings.next">Next</button>
+          <button class="button primary" id="folders-save" type="submit" data-i18n="settings.save" hidden>Save settings</button>
+        </div>
+      </form>
+      <section
+        id="folder-browser"
+        hidden
+        aria-label="Folder browser"
+        data-i18n-aria="folders.browser_aria"
+      >
+        <div id="folder-shortcuts" class="folder-shortcuts"></div>
+        <form id="browser-path-form" class="folder-input-row">
+          <label
+            for="browser-path"
+            class="sr-only"
+            data-i18n="folders.path_label"
+            >Path to browse</label
+          ><input
+            id="browser-path"
+            type="text"
+            maxlength="4096"
+            autocomplete="off"
+            spellcheck="false"
+          /><button class="button" type="submit" data-i18n="folders.go">
+            Go
+          </button>
+        </form>
+        <button
+          class="text-button folder-parent"
+          id="folder-parent"
+          type="button"
+        >
+          <span data-i18n="folders.parent">↑ Parent folder</span>
+        </button>
+        <p
+          id="folder-loading"
+          class="mode-help"
+          role="status"
+          hidden
+          data-i18n="folders.loading"
+        >
+          Reading folders…
+        </p>
+        <div
+          id="folder-list"
+          class="folder-list"
+          aria-label="Subfolders"
+          data-i18n-aria="folders.subfolders"
+        ></div>
+        <p id="folder-empty" class="mode-help" hidden data-i18n="folders.empty">
+          No accessible subfolders.
+        </p>
+        <button
+          class="text-button"
+          id="folder-more"
+          type="button"
+          hidden
+          data-i18n="folders.more"
+        >
+          Show more
+        </button>
+        <div class="folder-browser-actions">
+          <button
+            class="button"
+            id="folder-back"
+            type="button"
+            data-i18n="folders.back"
+          >
+            Back</button
+          ><button
+            class="button primary"
+            id="folder-choose"
+            type="button"
+            data-i18n="folders.choose"
+          >
+            Choose this folder
+          </button>
+        </div>
+      </section>
+      <section id="settings-restarting" class="settings-restarting" hidden role="status">
+        <span class="restart-spinner" aria-hidden="true"></span>
+        <h3 data-i18n="settings.restarting">LID is restarting…</h3>
+        <p data-i18n="settings.restarting_help">This page will reconnect automatically.</p>
+        <a id="settings-future-url" class="text-button" href="#"></a>
+      </section>
+      <p id="folders-error" class="form-error" role="alert" hidden></p>
+    </dialog>
+    <dialog id="proxy-dialog">
+      <div class="dialog-heading">
+        <div>
+          <span class="eyebrow" data-i18n="proxy.eyebrow">CONNECTION</span>
+          <h2 data-i18n="proxy.title">Your proxy.</h2>
+        </div>
+        <button
+          class="icon-button dialog-close"
+          aria-label="Close"
+          data-i18n-aria="add.close"
+        >
+          ✕
+        </button>
+      </div>
+      <p class="proxy-address" id="proxy-address">—</p>
+      <p id="proxy-message" class="proxy-message">Checking…</p>
+      <dl class="diagnostic-list">
+        <div>
+          <dt data-i18n="proxy.tcp">TCP traffic</dt>
+          <dd id="tcp-result">Pending</dd>
+        </div>
+        <div>
+          <dt data-i18n="proxy.udp">UDP relay</dt>
+          <dd id="udp-result">Pending</dd>
+        </div>
+        <div>
+          <dt data-i18n="proxy.last_check">Last check</dt>
+          <dd id="checked-at">—</dd>
+        </div>
+        <div>
+          <dt data-i18n="proxy.audit">Leak audit</dt>
+          <dd data-i18n="proxy.not_certified">Not certified</dd>
+        </div>
+      </dl>
+      <p class="diagnostic-note" data-i18n="proxy.note">
+        The connection test checks access to the proxy. The network traffic
+        audit is a separate control; this test does not provide an absolute
+        guarantee.
+      </p>
+      <button class="button file-button" id="recheck" data-i18n="proxy.recheck">
+        Check connection ↗
+      </button>
+    </dialog>
+    <div
+      id="toast-region"
+      class="toast-region"
+      aria-live="polite"
+      aria-atomic="false"
+    ></div>
+  </body>
+</html>
