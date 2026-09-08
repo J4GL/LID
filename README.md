@@ -2,6 +2,10 @@
 
 LID is a local FastAPI torrent client with a minimal vanilla HTML, CSS and JavaScript interface. It runs independent direct and SOCKS5 sessions, supports `.torrent` files and magnet links, keeps seeding after completion, and can move completed downloads to another disk.
 
+![LID dashboard showing direct and proxy Ubuntu torrents](docs/screenshots/dashboard.png)
+
+![LID direct and SOCKS5 proxy drop zones](docs/screenshots/drop-zones.png)
+
 ## Setup and launch
 
 LID requires macOS or Linux and Python 3.12.
