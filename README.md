@@ -4,6 +4,8 @@ LID is a local FastAPI torrent client with a minimal vanilla HTML, CSS and JavaS
 
 ![LID dashboard showing direct and proxy Ubuntu torrents](docs/screenshots/dashboard.png)
 
+### Drop zones
+
 ![LID direct and SOCKS5 proxy drop zones](docs/screenshots/drop-zones.png)
 
 ## Setup and launch
