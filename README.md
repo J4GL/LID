@@ -22,6 +22,12 @@ Open [http://127.0.0.1:8000](http://127.0.0.1:8000). On first launch, configure 
 
 `run.sh` creates the virtual environment, installs pinned dependencies and checks the configured ports. Stop LID with `Ctrl+C`.
 
+On a Linux system using systemd, enable automatic startup with:
+
+```sh
+sudo ./install-service.sh
+```
+
 Proxy mode is optional and disabled by default. When enabled, it is fail-closed: proxy torrents never fall back to the direct connection.
 
 ## Development
