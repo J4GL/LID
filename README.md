@@ -28,6 +28,13 @@ On a Linux system using systemd, enable automatic startup with:
 sudo ./install-service.sh
 ```
 
+Without root access, enable systemd lingering once and install a user service:
+
+```sh
+loginctl enable-linger "$USER"
+./install-service.sh --user
+```
+
 Proxy mode is optional and disabled by default. When enabled, it is fail-closed: proxy torrents never fall back to the direct connection.
 
 ## Development

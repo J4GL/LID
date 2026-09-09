@@ -7,3 +7,13 @@ Test: unit · `tests/test_service_installer.py` · `test_lid_service_001_install
 - When: `install-service.sh` is executed
 - Then: it writes `lid.service` with the checkout as `WorkingDirectory`, `run.sh` as `ExecStart`, the selected user, restart-on-failure behavior and the multi-user startup target
 - Then: it runs `systemctl daemon-reload`, `systemctl enable --now lid.service`, and verifies that the service is active and enabled
+
+## LID-SERVICE-002 — Install LID in the user systemd manager
+
+Implement: `install-service.sh --user`, run from a LID checkout when the service account has systemd lingering enabled.
+
+Test: unit · `tests/test_service_installer.py` · `test_lid_service_002_installs_user_systemd_unit`
+- Given: a LID checkout, an isolated home directory, a selected service user and a recording `systemctl` executable
+- When: `install-service.sh --user` is executed
+- Then: it writes `~/.config/systemd/user/lid.service` for the checkout without a system-level `User` directive
+- Then: it reloads, starts, verifies and enables the service through `systemctl --user`
