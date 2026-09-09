@@ -56,7 +56,7 @@ const messages = {
     "settings.state_help":
       "Changing this folder restarts LID and safely moves resume data and indexes.",
     "settings.connections_title": "Connections",
-    "settings.web_host": "Local web address",
+    "settings.web_host": "Web listen address",
     "settings.web_port": "Web port",
     "settings.direct_port": "Direct TCP / UDP port",
     "settings.upnp": "Enable UPnP for direct transfers",
@@ -307,7 +307,7 @@ const messages = {
     "settings.state_help":
       "Modifier ce dossier redémarre LID et déplace de façon sûre les reprises et les index.",
     "settings.connections_title": "Connexions",
-    "settings.web_host": "Adresse web locale",
+    "settings.web_host": "Adresse d’écoute web",
     "settings.web_port": "Port web",
     "settings.direct_port": "Port direct TCP / UDP",
     "settings.upnp": "Activer UPnP pour les transferts directs",

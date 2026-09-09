@@ -1,12 +1,19 @@
 import asyncio
+import ipaddress
 import json
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, Query
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    PlainTextResponse,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.datastructures import Headers, MutableHeaders
@@ -79,6 +86,32 @@ class SecurityMiddleware:
         await self.app(scope, receive, secured_send)
 
 
+class LocalNetworkHostMiddleware:
+    """Allow loopback/private IP hosts while rejecting DNS rebinding hosts."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            raw = Headers(scope=scope).get("host", "")
+            if raw.startswith("["):
+                host = raw[1 : raw.find("]")]
+            else:
+                host = raw.rsplit(":", 1)[0] if raw.count(":") == 1 else raw
+            allowed = host in {"localhost", "testserver"}
+            try:
+                address = ipaddress.ip_address(host)
+                allowed = allowed or address.is_private or address.is_loopback
+            except ValueError:
+                pass
+            if not allowed:
+                response = PlainTextResponse("Invalid host header", status_code=400)
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+
 def create_app(
     config,
     manager_factory=Manager,
@@ -113,10 +146,13 @@ def create_app(
         docs_url=None,
         redoc_url=None,
     )
-    app.add_middleware(
-        TrustedHostMiddleware,
-        allowed_hosts=["localhost", "127.0.0.1", "[::1]", "::1", "testserver"],
-    )
+    if config.server.host == "0.0.0.0":
+        app.add_middleware(LocalNetworkHostMiddleware)
+    else:
+        app.add_middleware(
+            TrustedHostMiddleware,
+            allowed_hosts=["localhost", "127.0.0.1", "[::1]", "::1", "testserver"],
+        )
     app.add_middleware(SecurityMiddleware, token=token)
 
     @app.exception_handler(OperationError)
@@ -244,8 +280,15 @@ def create_app(
     async def ready(request: Request):
         response = JSONResponse({"ready": True, "instance_id": instance_id})
         origin = request.headers.get("origin", "")
-        if origin.startswith("http://127.0.0.1:") or origin.startswith(
-            "http://[::1]:"
+        parsed_origin = urlsplit(origin)
+        same_origin = (
+            parsed_origin.scheme in ("http", "https")
+            and parsed_origin.netloc == request.headers.get("host", "")
+        )
+        if (
+            same_origin
+            or origin.startswith("http://127.0.0.1:")
+            or origin.startswith("http://[::1]:")
         ):
             response.headers["Access-Control-Allow-Origin"] = origin
         return response

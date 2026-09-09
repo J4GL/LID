@@ -18,7 +18,7 @@ cd LID
 ./run.sh
 ```
 
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000). On first launch, configure storage, network and performance settings in the setup screen. Torrent engines remain stopped until setup is complete.
+Open `http://<server-ip>:8000`. LID listens on the local network by default. On first launch, configure storage, network and performance settings in the setup screen. Torrent engines remain stopped until setup is complete.
 
 `run.sh` creates the virtual environment, installs pinned dependencies and checks the configured ports. Stop LID with `Ctrl+C`.
 

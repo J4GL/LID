@@ -99,7 +99,7 @@ def main():
             config = service.config
             setup_only = service.setup_required
             if setup_only:
-                bind_host, bind_port = "127.0.0.1", 8000
+                bind_host, bind_port = "0.0.0.0", 8000
                 check_port(bind_host, bind_port, socket.SOCK_STREAM)
             else:
                 bind_host, bind_port = config.server.host, config.server.port

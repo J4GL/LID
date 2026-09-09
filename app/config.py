@@ -10,14 +10,16 @@ class StrictModel(BaseModel):
 
 
 class Server(StrictModel):
-    host: str = "127.0.0.1"
+    host: str = "0.0.0.0"
     port: int = Field(default=8000, ge=1024, le=65535)
 
     @field_validator("host")
     @classmethod
     def local_only(cls, value):
-        if value not in ("127.0.0.1", "::1"):
-            raise ValueError("Cette version est locale : utiliser 127.0.0.1 ou ::1.")
+        if value not in ("0.0.0.0", "127.0.0.1", "::1"):
+            raise ValueError(
+                "Utiliser 0.0.0.0 pour le réseau local, 127.0.0.1 ou ::1."
+            )
         return value
 
 
