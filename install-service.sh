@@ -21,9 +21,11 @@ fi
 if [[ "$MODE" == "user" ]]; then
   UNIT_DIR="${LID_SYSTEMD_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user}"
   USER_DIRECTIVE=""
+  INSTALL_TARGET="default.target"
 else
   UNIT_DIR="${LID_SYSTEMD_DIR:-/etc/systemd/system}"
   USER_DIRECTIVE="User=$SERVICE_USER"
+  INSTALL_TARGET="multi-user.target"
 fi
 UNIT_PATH="$UNIT_DIR/lid.service"
 
@@ -64,8 +66,8 @@ After=network-online.target local-fs.target
 [Service]
 Type=simple
 $USER_DIRECTIVE
-WorkingDirectory="$PROJECT_DIR"
-ExecStart="$PROJECT_DIR/run.sh"
+WorkingDirectory=$PROJECT_DIR
+ExecStart=$PROJECT_DIR/run.sh
 Environment=PYTHONUNBUFFERED=1
 Restart=on-failure
 RestartSec=5
@@ -73,7 +75,7 @@ KillSignal=SIGINT
 TimeoutStopSec=120
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=$INSTALL_TARGET
 EOF
 
 chmod 0644 "$TEMP_UNIT"

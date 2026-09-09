@@ -34,8 +34,8 @@ def test_lid_service_001_installs_and_enables_systemd_unit(tmp_path):
     unit = (unit_dir / "lid.service").read_text()
     assert "Description=LID - Linux ISO Downloader" in unit
     assert "User=lid-test-user" in unit
-    assert f'WorkingDirectory="{project}"' in unit
-    assert f'ExecStart="{project / "run.sh"}"' in unit
+    assert f"WorkingDirectory={project}" in unit
+    assert f"ExecStart={project / 'run.sh'}" in unit
     assert "Restart=on-failure" in unit
     assert "WantedBy=multi-user.target" in unit
     assert systemctl_log.read_text().splitlines() == [
@@ -77,8 +77,9 @@ def test_lid_service_002_installs_user_systemd_unit(tmp_path):
     assert result.returncode == 0, result.stderr
     unit = (home / ".config/systemd/user/lid.service").read_text()
     assert "User=" not in unit
-    assert f'WorkingDirectory="{project}"' in unit
-    assert f'ExecStart="{project / "run.sh"}"' in unit
+    assert f"WorkingDirectory={project}" in unit
+    assert f"ExecStart={project / 'run.sh'}" in unit
+    assert "WantedBy=default.target" in unit
     assert systemctl_log.read_text().splitlines() == [
         "--user daemon-reload",
         "--user enable --now lid.service",

@@ -15,5 +15,5 @@ Implement: `install-service.sh --user`, run from a LID checkout when the service
 Test: unit · `tests/test_service_installer.py` · `test_lid_service_002_installs_user_systemd_unit`
 - Given: a LID checkout, an isolated home directory, a selected service user and a recording `systemctl` executable
 - When: `install-service.sh --user` is executed
-- Then: it writes `~/.config/systemd/user/lid.service` for the checkout without a system-level `User` directive
+- Then: it writes `~/.config/systemd/user/lid.service` for the checkout without a system-level `User` directive and enables it through `default.target`
 - Then: it reloads, starts, verifies and enables the service through `systemctl --user`
