@@ -5,19 +5,41 @@ persisted before libtorrent starts moving files, including across filesystems.
 """
 
 import fcntl
+import itertools
+import os
 from pathlib import Path
 import shutil
 import time
 
 import libtorrent as lt
 
-from .folders import RootRegistry, StorageUnavailable, directory, separate
+from .folders import MARKER, RootRegistry, StorageUnavailable, directory, separate
 from .policy import destination_for
 from .storage import atomic_write
+
+MISSING_PAYLOAD = (
+    "Fichiers introuvables à l'emplacement enregistré : reprise bloquée, "
+    "aucun téléchargement automatique."
+)
 
 
 def cross_device(source, target):
     return source.stat().st_dev != target.stat().st_dev
+
+
+def rename_entry(files, folder):
+    """Put a recorded top-level name back on a torrent's file list.
+
+    A rename is applied by the session, not by the metadata we hold, so the name
+    the index owns has to be put back by hand. Doing it twice changes nothing,
+    which keeps this safe wherever the paths come from.
+    """
+    if not folder:
+        return files
+    return [
+        {"path": str(Path(folder, *Path(f["path"]).parts[1:])), "size": f["size"]}
+        for f in files
+    ]
 
 
 class CompletionMoves:
@@ -33,6 +55,16 @@ class CompletionMoves:
             backup = engine.folder / "index.before-storage.json"
             if not backup.exists():
                 atomic_write(backup, engine.manifest.read_bytes())
+        # An index written before the final folder was flattened records no shape
+        # at all, and everything it points at is nested.
+        if any(
+            "layout" not in record.get("storage", {})
+            for record in engine.records.values()
+            if "storage" in record
+        ):
+            backup = engine.folder / "index.before-flat.json"
+            if not backup.exists():
+                atomic_write(backup, engine.manifest.read_bytes())
         for name in ("downloads", "completed"):
             root = getattr(engine.config.storage, name)
             if root:
@@ -43,6 +75,14 @@ class CompletionMoves:
         for record in engine.records.values():
             if "storage" not in record:
                 record["storage"] = self.new_record(record["id"], legacy=True)
+            state = record["storage"]
+            state.setdefault("layout", "nested")
+            state.setdefault("target_layout", None)
+            state.setdefault("folder", None)
+            if state.get("journal"):
+                state["journal"].setdefault("source_layout", "nested")
+                state["journal"].setdefault("target_layout", "nested")
+                state["journal"].setdefault("target_claimed", False)
         if engine.records:
             engine.persist()
 
@@ -52,23 +92,29 @@ class CompletionMoves:
             "path": str(Path(root) / self.engine.mode / key),
             "root": root,
             "root_id": self.registry.roots().get(root),
+            # A torrent is always born in the staging folder, one folder per
+            # infohash; only the final folder is flat.
+            "layout": "nested",
+            "folder": None,
             "completion_seen": None if legacy else False,
             "phase": "idle",
             "target": None,
             "target_root": None,
             "target_id": None,
+            "target_layout": None,
             "error": None,
             "retry_at": 0,
             "manual_retry": False,
             "journal": None,
         }
 
-    def valid_path(self, record, root=None, identity=None):
+    def valid_path(self, record, root=None, identity=None, layout=None):
         state = record["storage"]
         root = root or state["root"]
         identity = identity or state["root_id"]
+        layout = layout or state["layout"]
         path = destination_for(
-            self.registry.check(root, identity), self.engine.mode, record["id"]
+            self.registry.check(root, identity), self.engine.mode, record["id"], layout
         )
         if root == state["root"] and str(path) != state["path"]:
             raise StorageUnavailable(
@@ -119,7 +165,49 @@ class CompletionMoves:
             return False
 
     @staticmethod
-    def discard_stale(path, files):
+    def file_list(info, folder=None):
+        files = info.files()
+        listed = [
+            {"path": files.file_path(i), "size": files.file_size(i)}
+            for i in range(files.num_files())
+            if not files.file_flags(i) & lt.file_storage.flag_pad_file
+        ]
+        return rename_entry(listed, folder)
+
+    @staticmethod
+    def entries_of(files):
+        """The torrent's own top-level names — what it claims in a shared folder."""
+        return sorted({Path(f["path"]).parts[0] for f in files})
+
+    @staticmethod
+    def reserved(name):
+        return name == MARKER or name.startswith(".lid-") or name.endswith(".parts")
+
+    def require_payload(self, record, params, destination):
+        """A torrent that once completed must find its files before it may run.
+
+        Every path used to carry an infohash, so a wrong one was barely reachable.
+        A shared final folder makes it reachable — a migration cut short, a stale
+        recorded shape — and libtorrent answers an empty save path by checking to
+        zero and downloading the whole library again.
+        """
+        state = record["storage"]
+        if (
+            not params.ti
+            or not state["completion_seen"]
+            or state["phase"] in ("verifying", "recovery")
+        ):
+            return
+        if self.complete_files(destination, self.file_list(params.ti, state["folder"])):
+            if state["manual_retry"] and state["error"] == MISSING_PAYLOAD:
+                state.update(error=None, manual_retry=False)
+            return
+        state.update(error=MISSING_PAYLOAD, manual_retry=True, retry_at=0)
+        self.engine.persist()
+        raise StorageUnavailable(MISSING_PAYLOAD)
+
+    @staticmethod
+    def discard_stale(path, files, *, prune_root=True):
         # Only the interrupted move's own files, and only the directories they
         # leave empty: rmdir refuses anything that still holds other data.
         root = Path(path)
@@ -142,6 +230,9 @@ class CompletionMoves:
                 folder.rmdir()
             except OSError:
                 pass
+        # A flat root belongs to the whole library, never to one torrent.
+        if not prune_root:
+            return
         try:
             root.rmdir()
         except OSError:
@@ -153,10 +244,16 @@ class CompletionMoves:
         if journal:
             # Never trust resume.save_path after a crash during move_storage.
             source = self.valid_path(
-                record, journal["source_root"], journal["source_id"]
+                record,
+                journal["source_root"],
+                journal["source_id"],
+                journal["source_layout"],
             )
             target = self.valid_path(
-                record, journal["target_root"], journal["target_id"]
+                record,
+                journal["target_root"],
+                journal["target_id"],
+                journal["target_layout"],
             )
             # A move copies before it unlinks, so an interruption normally leaves
             # a complete copy on one side and a partial one on the other. The
@@ -167,16 +264,20 @@ class CompletionMoves:
                     path=str(target),
                     root=journal["target_root"],
                     root_id=journal["target_id"],
+                    layout=journal["target_layout"],
                     recovery_destination=True,
                     stale_copy=str(source),
+                    stale_layout=journal["source_layout"],
                 )
             elif self.complete_files(source, journal["files"]):
                 state.update(
                     path=str(source),
                     root=journal["source_root"],
                     root_id=journal["source_id"],
+                    layout=journal["source_layout"],
                     recovery_destination=False,
                     stale_copy=str(target),
+                    stale_layout=journal["target_layout"],
                 )
             else:
                 state.update(
@@ -226,15 +327,20 @@ class CompletionMoves:
         if not root:
             state.update(phase="idle", target=None, error=None)
             return None
+        # The final folder is browsed by people: no mode, no infohash, the
+        # torrent's own entry sits at its root. Normalise it the way valid_path
+        # does, so the two never disagree over a trailing slash.
+        root = directory(root)
         state.update(
-            target=str(root / self.engine.mode / record["id"]),
+            target=str(root),
             target_root=str(root),
             target_id=self.registry.roots().get(str(root)),
+            target_layout="flat",
         )
-        if state["target"] == state["path"]:
+        if state["target"] == state["path"] and state["layout"] == "flat":
             state.update(phase="done", error=None)
             return None
-        return self.valid_path(record, state["target_root"], state["target_id"])
+        return self.valid_path(record, state["target_root"], state["target_id"], "flat")
 
     def acquire(self):
         lock = (self.engine.config.storage.state / "storage-move.lock").open("a+")
@@ -251,12 +357,86 @@ class CompletionMoves:
             self.lock.close()
         self.lock, self.active = None, None
 
+    def occupancy(self, target, files):
+        """What this torrent's own names already hold in the shared final folder.
+
+        Three answers: nothing there, the very same data, or someone else's.
+        """
+        entries = self.entries_of(files)
+        present = [name for name in entries if os.path.lexists(target / name)]
+        for name in present:
+            if (target / name).is_symlink():
+                raise StorageUnavailable(
+                    f"« {name} » est un lien symbolique dans le dossier final : "
+                    "rien ne sera écrit à travers."
+                )
+        if not present:
+            return "free"
+        if len(present) == len(entries) and self.same_content(target, files, entries):
+            return "same"
+        return "other"
+
+    @staticmethod
+    def same_content(root, files, entries):
+        # Same names, same sizes, same count and nothing extra: the same data.
+        found = {}
+        for name in entries:
+            item = root / name
+            if item.is_file():
+                found[name] = item.stat().st_size
+                continue
+            for child in item.rglob("*"):
+                if child.is_symlink():
+                    return False
+                if child.is_file():
+                    found[str(child.relative_to(root))] = child.stat().st_size
+        return found == {f["path"]: f["size"] for f in files}
+
+    def free_name(self, target, files, source):
+        """The first `Nom (2)`, `Nom (3)`… nobody is using, extension kept last."""
+        current = self.entries_of(files)[0]
+        stem, suffix = current, ""
+        if len(files) == 1 and Path(files[0]["path"]).parent == Path("."):
+            stem, suffix = os.path.splitext(current)
+        for number in itertools.count(2):
+            candidate = f"{stem} ({number}){suffix}"
+            if (
+                not self.reserved(candidate)
+                and not os.path.lexists(target / candidate)
+                and not os.path.lexists(source / candidate)
+            ):
+                return current, candidate
+
+    def rename_aside(self, record, source, target, files):
+        """Take a free name rather than touch what is already in the final folder."""
+        current, candidate = self.free_name(target, files, source)
+        record["storage"]["folder"] = candidate
+        # Recorded before the disk moves: a crash here leaves the payload check
+        # in Engine.attach to refuse the torrent instead of re-downloading it.
+        self.engine.persist()
+        os.rename(source / current, source / candidate)
+        self.reattach(record)
+        record["storage"].update(phase="pending", retry_at=0, error=None)
+        self.engine.persist()
+
+    def reattach(self, record):
+        """Re-add the torrent so libtorrent reads the new layout from scratch."""
+        key = record["id"]
+        if key in self.engine.handles:
+            handle = self.engine.handles.pop(key)
+            self.engine.session.remove_torrent(handle)
+        self.engine.restore(record)
+
     def begin(self, record):
         key = record["id"]
         state = record["storage"]
         if not self.acquire():
             return
         try:
+            handle = self.engine.handles.get(key)
+            if not handle or not handle.status().is_seeding:
+                self.release()
+                return
             source = self.valid_path(record)
             target = self.target_for(record)
             if target is None:
@@ -264,23 +444,13 @@ class CompletionMoves:
                 self.engine.persist()
                 return
             directory(state["target_root"], writable=True)
-            if target.exists() and any(target.iterdir()):
-                state["manual_retry"] = True
-                raise StorageUnavailable(
-                    "Destination déjà occupée : aucun fichier ne sera écrasé. Libérez le dossier puis réessayez."
-                )
-            handle = self.engine.handles[key]
-            status = handle.status()
-            if not status.is_seeding:
+            files = self.file_list(handle.torrent_file(), state["folder"])
+            occupied = self.occupancy(target, files)
+            if occupied == "other":
+                self.rename_aside(record, source, target, files)
                 self.release()
                 return
-            info = handle.torrent_file().files()
-            files = [
-                {"path": info.file_path(i), "size": info.file_size(i)}
-                for i in range(info.num_files())
-                if not info.file_flags(i) & lt.file_storage.flag_pad_file
-            ]
-            if cross_device(source, Path(state["target_root"])):
+            if occupied == "free" and cross_device(source, Path(state["target_root"])):
                 if shutil.disk_usage(state["target_root"]).free < sum(
                     f["size"] for f in files
                 ):
@@ -293,12 +463,24 @@ class CompletionMoves:
                 journal={
                     "source_root": state["root"],
                     "source_id": state["root_id"],
+                    "source_layout": state["layout"],
                     "target_root": state["target_root"],
                     "target_id": state["target_id"],
+                    "target_layout": state["target_layout"],
+                    # Whether this move is what put the files there, and so the
+                    # only thing allowed to take them away again.
+                    "target_claimed": occupied == "free",
                     "files": files,
                 },
             )
             self.engine.persist()
+            if occupied == "same":
+                # The same data is already in place: adopt it rather than copy it
+                # over itself. The interrupted-move recovery does exactly this —
+                # hash-check the destination, then drop the staging copy.
+                self.release()
+                self.reattach(record)
+                return
             self.active = key
             handle.move_storage(str(target), lt.move_flags_t.fail_if_exist)
         except (ValueError, OSError, RuntimeError) as exc:
@@ -318,6 +500,7 @@ class CompletionMoves:
                 path=state["target"],
                 root=state["target_root"],
                 root_id=state["target_id"],
+                layout=state["target_layout"],
                 phase="done",
                 journal=None,
                 error=None,
@@ -351,8 +534,12 @@ class CompletionMoves:
             handle = self.engine.handles[key]
             if handle.status().is_seeding:
                 stale = state.pop("stale_copy", None)
-                if stale and state["journal"]:
-                    self.discard_stale(stale, state["journal"]["files"])
+                flat = state.pop("stale_layout", "nested") == "flat"
+                journal = state["journal"]
+                # A nested side is the torrent's own folder and goes whole. A flat
+                # side is shared, so only a copy this move wrote may be removed.
+                if stale and journal and (not flat or journal["target_claimed"]):
+                    self.discard_stale(stale, journal["files"], prune_root=not flat)
                 state.update(
                     phase="done"
                     if state.pop("recovery_destination", False)
@@ -389,16 +576,13 @@ class CompletionMoves:
         if state["phase"] == "moving":
             raise StorageUnavailable("Déplacement en cours. Attendez sa fin.")
         if state["journal"] or record["id"] not in self.engine.handles:
-            if record["id"] in self.engine.handles:
-                # Rechecking an ambiguous disk layout requires a fresh paused
-                # handle; the network policy is reapplied by Engine.restore.
-                handle = self.engine.handles.pop(record["id"])
-                self.engine.session.remove_torrent(handle)
             if not self.engine.session:
                 raise StorageUnavailable(
                     "Moteur indisponible : attendez la validation du proxy."
                 )
-            self.engine.restore(record)
+            # Rechecking an ambiguous disk layout requires a fresh paused handle;
+            # the network policy is reapplied by Engine.restore.
+            self.reattach(record)
             state["error"] = None
         else:
             state.update(phase="pending", error=None, manual_retry=False, retry_at=0)

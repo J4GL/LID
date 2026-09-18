@@ -238,16 +238,36 @@ def is_ip(host):
         return False
 
 
-def destination_for(root: Path, mode, key):
-    destination = root / mode / key
+def destination_for(root: Path, mode, key, layout="nested"):
+    # A flat root is the whole library, shared by every completed torrent: it is
+    # never walked, and the per-torrent symlink check is done on the torrent's own
+    # top-level entries at move time instead.
+    destination = root if layout == "flat" else root / mode / key
     if destination.resolve() != destination or any(
         p.is_symlink() for p in [destination, *destination.parents] if p != root.parent
     ):
         raise ValueError("Le dossier de destination contient un lien symbolique.")
-    if destination.exists():
+    if layout != "flat" and destination.exists():
         for item in destination.rglob("*"):
             if item.is_symlink():
                 raise ValueError(
                     "Un lien symbolique existe dans le dossier du torrent."
                 )
     return destination
+
+
+def apply_folder(params, folder):
+    """Rename the torrent's top-level entry, when the recorded one differs.
+
+    `sanitize_params` drops every rename carried by resume data; this puts back the
+    one the index owns, so a name taken to avoid overwriting something in the final
+    folder survives each restart.
+    """
+    if not folder or not params.ti:
+        return params
+    files = params.ti.files()
+    params.renamed_files = {
+        i: str(Path(folder, *Path(files.file_path(i)).parts[1:]))
+        for i in range(files.num_files())
+    }
+    return params

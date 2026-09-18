@@ -3,6 +3,7 @@
 import concurrent.futures
 import json
 import os
+from pathlib import Path
 import signal
 import time
 
@@ -11,6 +12,7 @@ import libtorrent as lt
 from .config import Config
 from .policy import (
     settings,
+    apply_folder,
     parse_source,
     sanitize_params,
     validate_info,
@@ -175,9 +177,23 @@ class Engine:
         params.trackers = record["trackers"]
         self.attach(record, params)
 
+    @staticmethod
+    def shown_path(record):
+        """Where the files are, not where the save path points.
+
+        A flat final folder is the save path of every completed torrent, so the
+        dashboard would otherwise show one address for the whole library.
+        """
+        storage = record["storage"]
+        if storage["layout"] != "flat":
+            return storage["path"]
+        return str(Path(storage["path"]) / (storage["folder"] or record["name"]))
+
     def attach(self, record, params):
         destination = self.moves.prepare_restore(record, params)
         sanitize_params(params, self.mode, self.proxy["udp"], destination)
+        apply_folder(params, record["storage"]["folder"])
+        self.moves.require_payload(record, params, destination)
         if record["storage"]["phase"] == "verifying":
             params.flags |= lt.torrent_flags.upload_mode
         handle = self.session.add_torrent(params)
@@ -473,8 +489,12 @@ class Engine:
             }
             storage = record["storage"]
             row.update(
-                save_path=storage["path"],
-                move_destination=storage["target"],
+                save_path=self.shown_path(record),
+                # Once the move is done the destination is where the files are,
+                # and the dashboard hides a destination equal to the save path.
+                move_destination=self.shown_path(record)
+                if storage["phase"] == "done"
+                else storage["target"],
                 move_state=storage["phase"],
                 move_error=storage["error"],
                 can_retry_move=storage["phase"] in ("failed", "recovery", "pending")

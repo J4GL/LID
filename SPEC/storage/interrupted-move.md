@@ -2,16 +2,19 @@
 
 A move copies files to the destination before removing them from the source, so an interruption
 normally leaves a complete copy on one side and a partial copy on the other. Recovery keeps the
-complete side, and the partial copy on the other side holds no unique data: it is discarded once
-libtorrent has hash-checked the kept copy, so the move can run again instead of stalling on a
-destination that looks occupied.
+complete side, and the partial copy on the other side holds no unique data — as long as the move
+itself wrote it, which is what `target_claimed` records. It is discarded once libtorrent has
+hash-checked the kept copy, so the move can run again instead of stalling on a destination that
+looks occupied.
 
 Implement: `CompletionMoves.prepare_restore` and the `torrent_checked_alert` branch of
 `CompletionMoves.alert` in `app/moves.py`, reached from `Engine.restore` on start-up and from the
 `retry-move` action handled in `app/engine.py`.
+Uses: [A discarded copy never reaches beyond what the move itself wrote](flat-final.md)
 Out of scope: an interruption that leaves neither side complete, which stays a manual recovery
 (`tests/test_moves.py::test_interrupted_move_recovery_never_downloads_missing_data[split]`);
-deleting anything outside the interrupted move's own journal file list.
+deleting anything outside the interrupted move's own journal file list, or anything in a flat
+destination the move did not create.
 
 Test: unit · `tests/test_moves.py` · `test_storage_move_001_recovers_from_the_complete_side_and_discards_the_stale_copy`
 - Given: a seeding multi-file torrent whose journal records an interrupted move, a complete copy of

@@ -18,10 +18,13 @@ from tests.support import SocksServer, make_torrent, wait_until
 from tests.test_integration import engine_config, seeder, set_health
 
 
-def multi_torrent(root):
+def multi_torrent(root, name="album", seed=1):
     root.mkdir(parents=True)
     storage = lt.file_storage()
-    files = {"album/a.bin": b"a" * 80000, "album/nested/b.bin": b"b" * 120000}
+    files = {
+        f"{name}/a.bin": bytes([seed]) * 80000,
+        f"{name}/nested/b.bin": bytes([seed + 1]) * 120000,
+    }
     for name, body in files.items():
         target = root / name
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -34,13 +37,17 @@ def multi_torrent(root):
 
 
 @contextmanager
-def transfer(tmp_path, mode="proxy", *, multi=False, magnet=False, completed=None):
+def transfer(
+    tmp_path, mode="proxy", *, multi=False, magnet=False, completed=None, name=None
+):
     with SocksServer() as proxy:
         if multi:
-            source, files = multi_torrent(tmp_path / "seed")
+            source, files = multi_torrent(tmp_path / "seed", name or "album")
         else:
-            source, body = make_torrent(tmp_path / "seed", private=not magnet)
-            files = {"payload.bin": body}
+            source, body = make_torrent(
+                tmp_path / "seed", name or "payload.bin", private=not magnet
+            )
+            files = {name or "payload.bin": body}
         seed, seed_handle, port = seeder(tmp_path / "seed", source)
         config = engine_config(tmp_path, proxy.port)
         config.storage.completed = completed or tmp_path / "completed"
@@ -83,7 +90,7 @@ def test_move_seed_and_restore_real_torrents(tmp_path, mode, multi, magnet):
         original = Path(record["storage"]["path"])
         wait_moved(engine, record)
         destination = Path(record["storage"]["path"])
-        assert destination == engine.config.storage.completed / mode / record["id"]
+        assert destination == engine.config.storage.completed
         assert all(
             (destination / name).read_bytes() == body for name, body in files.items()
         )
@@ -134,7 +141,7 @@ def test_move_seed_and_restore_real_torrents(tmp_path, mode, multi, magnet):
             restored.close()
 
 
-def test_missing_disk_and_collision_preserve_source(tmp_path):
+def test_missing_disk_preserves_the_source(tmp_path):
     with transfer(tmp_path, "direct") as (engine, record, _, files):
         engine.moves.next_scan = float("inf")
         wait_until(
@@ -151,15 +158,6 @@ def test_missing_disk_and_collision_preserve_source(tmp_path):
         assert engine.handles[record["id"]].status().is_seeding
         assert all((source / name).read_bytes() == body for name, body in files.items())
         marker.write_text(identity)
-        occupied = engine.config.storage.completed / "direct" / record["id"]
-        occupied.mkdir(parents=True)
-        (occupied / "important.txt").write_text("keep")
-        engine.action(record["id"], "retry-move")
-        engine.moves.next_scan = 0
-        engine.tick()
-        assert record["storage"]["manual_retry"]
-        assert (occupied / "important.txt").read_text() == "keep"
-        (occupied / "important.txt").unlink()
         engine.action(record["id"], "retry-move")
         wait_moved(engine, record)
 
@@ -239,7 +237,7 @@ def test_actual_cross_filesystem_move(tmp_path):
             )
 
 
-def journal_interrupted_move(engine, record, files, target):
+def journal_interrupted_move(engine, record, files, target, *, claimed=True):
     """Close the engine and rewrite its manifest as a move cut short mid-flight."""
     engine.close()
     manifest = json.loads(engine.manifest.read_text())
@@ -254,14 +252,22 @@ def journal_interrupted_move(engine, record, files, target):
         journal={
             "source_root": saved["root"],
             "source_id": saved["root_id"],
+            "source_layout": "nested",
             "target_root": completed,
             "target_id": engine.moves.registry.roots()[completed],
+            "target_layout": "flat",
+            "target_claimed": claimed,
             "files": [
                 {"path": name, "size": len(body)} for name, body in files.items()
             ],
         },
     )
     engine.manifest.write_text(json.dumps(manifest))
+
+
+def entries_of(files):
+    """The torrent's own top-level names, the unit a flat folder is shared by."""
+    return sorted({Path(name).parts[0] for name in files})
 
 
 @pytest.mark.parametrize("layout", ["source", "destination", "split", "corrupt"])
@@ -273,11 +279,11 @@ def test_interrupted_move_recovery_never_downloads_missing_data(tmp_path, layout
         )
         state = record["storage"]
         source = Path(state["path"])
-        target = engine.config.storage.completed / "direct" / record["id"]
+        target = engine.config.storage.completed
         journal_interrupted_move(engine, record, files, target)
         if layout in ("destination", "corrupt"):
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(source), str(target))
+            for entry in entries_of(files):
+                shutil.move(str(source / entry), str(target / entry))
         elif layout == "split":
             first = next(iter(files))
             (target / first).parent.mkdir(parents=True)
@@ -327,7 +333,7 @@ def test_storage_move_001_recovers_from_the_complete_side_and_discards_the_stale
             lambda: engine.tick() or engine.handles[record["id"]].status().is_seeding
         )
         source = Path(record["storage"]["path"])
-        target = engine.config.storage.completed / "direct" / record["id"]
+        target = engine.config.storage.completed
         journal_interrupted_move(engine, record, files, target)
         first, second = list(files)
         if complete_side == "source":
@@ -339,8 +345,8 @@ def test_storage_move_001_recovers_from_the_complete_side_and_discards_the_stale
             (target / second).write_bytes(files[second][:1024])
         else:
             # Cut short just before the last source file was unlinked.
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(source), str(target))
+            for entry in entries_of(files):
+                shutil.move(str(source / entry), str(target / entry))
             (source / first).parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(target / first, source / first)
 
@@ -402,3 +408,246 @@ def test_moves_are_serialized_and_active_destination_is_frozen(tmp_path):
             assert other_record["storage"]["phase"] == "done"
         finally:
             other.close()
+
+
+@pytest.mark.parametrize("multi", [True, False])
+def test_storage_flat_001_completed_torrents_land_in_the_final_folder(tmp_path, multi):
+    with transfer(tmp_path, "direct", multi=multi) as (engine, record, _, files):
+        wait_moved(engine, record)
+        final = engine.config.storage.completed
+        assert record["storage"]["path"] == str(final)
+        assert record["storage"]["layout"] == "flat"
+        assert all((final / name).read_bytes() == body for name, body in files.items())
+        present = {item.name for item in final.iterdir()}
+        assert set(entries_of(files)) <= present
+        assert not present & {"direct", "proxy", record["id"]}
+        assert (final / MARKER).is_file()
+        if not multi:
+            assert (final / "payload.bin").is_file()
+        assert engine.handles[record["id"]].status().is_seeding
+
+
+def seeded_in_staging(engine, record):
+    """Hold the completion scan back until the test has staged the final folder."""
+    engine.moves.next_scan = float("inf")
+    wait_until(
+        lambda: engine.tick() or engine.handles[record["id"]].status().is_seeding
+    )
+    return Path(record["storage"]["path"])
+
+
+def test_storage_flat_002_an_identical_entry_is_adopted_instead_of_duplicated(tmp_path):
+    with transfer(tmp_path, "direct", multi=True) as (engine, record, _, files):
+        source = seeded_in_staging(engine, record)
+        final = engine.config.storage.completed
+        for name, body in files.items():
+            (final / name).parent.mkdir(parents=True, exist_ok=True)
+            (final / name).write_bytes(body)
+        stamps = {name: (final / name).stat().st_mtime_ns for name in files}
+        engine.moves.next_scan = 0
+        wait_moved(engine, record)
+        assert all((final / name).read_bytes() == body for name, body in files.items())
+        assert {name: (final / name).stat().st_mtime_ns for name in files} == stamps
+        assert {item.name for item in final.iterdir()} == {MARKER, *entries_of(files)}
+        assert not source.exists() or not any(p.is_file() for p in source.rglob("*"))
+        assert record["storage"]["path"] == str(final)
+        assert record["storage"]["layout"] == "flat"
+        assert engine.handles[record["id"]].status().is_seeding
+
+
+def test_storage_flat_003_a_different_entry_of_the_same_name_is_suffixed(tmp_path):
+    with transfer(tmp_path, "direct", multi=True) as (engine, record, _, files):
+        seeded_in_staging(engine, record)
+        final = engine.config.storage.completed
+        squatter = final / "album" / "a.bin"
+        squatter.parent.mkdir(parents=True)
+        squatter.write_bytes(b"z" * 4096)
+        engine.moves.next_scan = 0
+        wait_moved(engine, record)
+        assert squatter.read_bytes() == b"z" * 4096
+        assert record["storage"]["folder"] == "album (2)"
+        assert all(
+            (final / name.replace("album/", "album (2)/", 1)).read_bytes() == body
+            for name, body in files.items()
+        )
+        assert engine.handles[record["id"]].status().is_seeding
+        engine.close()
+
+        restored = Engine(engine.config, "direct")
+        try:
+            handle = restored.handles[record["id"]]
+            assert Path(handle.status().save_path) == final
+            wait_until(lambda: restored.tick() or handle.status().is_seeding, 20)
+            assert handle.status().download_payload_rate == 0
+            assert all(
+                (final / name.replace("album/", "album (2)/", 1)).read_bytes() == body
+                for name, body in files.items()
+            )
+        finally:
+            restored.close()
+
+
+def test_storage_flat_004_a_discarded_copy_never_reaches_another_torrent(tmp_path):
+    with transfer(tmp_path, "direct", multi=True) as (engine, record, _, files):
+        source = seeded_in_staging(engine, record)
+        final = engine.config.storage.completed
+        # Another torrent already occupies this name with same-sized, other bytes.
+        first = next(iter(files))
+        neighbour = final / first
+        neighbour.parent.mkdir(parents=True, exist_ok=True)
+        neighbour.write_bytes(b"N" * len(files[first]))
+        journal_interrupted_move(engine, record, files, final, claimed=False)
+
+        restored = Engine(engine.config, "direct")
+        try:
+            entry = restored.records[record["id"]]
+            wait_until(
+                lambda: restored.tick() or entry["storage"]["phase"] == "done", 25
+            )
+            assert neighbour.read_bytes() == b"N" * len(files[first])
+            assert final.is_dir() and (final / MARKER).is_file()
+            handle = restored.handles[record["id"]]
+            assert handle.status().is_seeding
+            assert handle.status().download_payload_rate == 0
+            assert all(
+                (source / name).read_bytes() == body
+                for name, body in files.items()
+                if (source / name).exists()
+            )
+        finally:
+            restored.close()
+
+
+def test_storage_flat_005_the_final_folder_is_never_walked_and_symlinks_block_the_move(
+    tmp_path, monkeypatch
+):
+    with transfer(tmp_path, "direct", multi=True) as (engine, record, _, files):
+        seeded_in_staging(engine, record)
+        final = engine.config.storage.completed
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        link = final / "album"
+        link.symlink_to(elsewhere, target_is_directory=True)
+
+        walked = []
+        original = Path.rglob
+
+        def guarded(self, pattern, *args, **kwargs):
+            # One torrent's own entry is bounded; the whole library is not.
+            if self == final:
+                walked.append(self)
+            return original(self, pattern, *args, **kwargs)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(Path, "rglob", guarded)
+            engine.moves.next_scan = 0
+            engine.tick()
+            assert record["storage"]["phase"] == "failed"
+            assert "album" in record["storage"]["error"]
+            assert link.is_symlink()
+            assert not any(elsewhere.iterdir())
+            assert walked == []
+
+            link.unlink()
+            engine.action(record["id"], "retry-move")
+            wait_moved(engine, record)
+            assert walked == []
+        assert engine.handles[record["id"]].status().is_seeding
+
+
+def test_storage_flat_006_the_layout_is_read_from_the_index(tmp_path):
+    with transfer(tmp_path, "direct", multi=True) as (engine, record, _, files):
+        seeded_in_staging(engine, record)
+        legacy = Path(record["storage"]["path"])
+        engine.close()
+        manifest = json.loads(engine.manifest.read_text())
+        saved = manifest[record["id"]]["storage"]
+        saved.pop("layout", None)
+        saved["journal"] = {
+            "source_root": saved["root"],
+            "source_id": saved["root_id"],
+            "target_root": str(engine.config.storage.completed),
+            "target_id": engine.moves.registry.roots()[
+                str(engine.config.storage.completed)
+            ],
+            "files": [
+                {"path": name, "size": len(body)} for name, body in files.items()
+            ],
+        }
+        before = json.dumps(manifest, indent=2)
+        engine.manifest.write_text(before)
+
+        restored = Engine(engine.config, "direct")
+        try:
+            state = restored.records[record["id"]]["storage"]
+            assert state["layout"] == "nested"
+            assert state["journal"]["source_layout"] == "nested"
+            assert state["journal"]["target_layout"] == "nested"
+            assert state["journal"]["target_claimed"] is False
+            backup = restored.folder / "index.before-flat.json"
+            assert json.loads(backup.read_text()) == json.loads(before)
+            assert all(
+                (legacy / name).read_bytes() == body for name, body in files.items()
+            )
+        finally:
+            restored.close()
+
+
+def test_storage_flat_006_the_layout_survives_a_new_final_folder(tmp_path):
+    with transfer(tmp_path, "direct", multi=True) as (engine, record, _, files):
+        wait_moved(engine, record)
+        original = engine.config.storage.completed
+        assert record["storage"]["layout"] == "flat"
+        engine.close()
+
+        another = tmp_path / "another-finished"
+        another.mkdir()
+        engine.moves.registry.register(another)
+        engine.config.storage.completed = another
+        restored = Engine(engine.config, "direct")
+        try:
+            state = restored.records[record["id"]]["storage"]
+            assert state["layout"] == "flat"
+            assert state["root"] == str(original)
+            handle = restored.handles[record["id"]]
+            assert Path(handle.status().save_path) == original
+            wait_until(lambda: restored.tick() or handle.status().is_seeding, 20)
+            assert handle.status().download_payload_rate == 0
+        finally:
+            restored.close()
+
+
+def test_storage_resume_001_a_completed_torrent_with_missing_files_is_not_resumed(
+    tmp_path,
+):
+    with transfer(tmp_path, "direct", multi=True) as (engine, record, _, files):
+        wait_moved(engine, record)
+        final = engine.config.storage.completed
+        engine.close()
+        stash = tmp_path / "stash"
+        stash.mkdir()
+        for entry in entries_of(files):
+            shutil.move(str(final / entry), str(stash / entry))
+
+        restored = Engine(engine.config, "direct")
+        try:
+            entry_record = restored.records[record["id"]]
+            for _ in range(20):
+                restored.tick()
+            handle = restored.handles.get(record["id"])
+            assert handle is None or handle.status().paused
+            assert handle is None or handle.status().download_payload_rate == 0
+            assert entry_record["storage"]["error"]
+            assert {item.name for item in final.iterdir()} == {MARKER}
+        finally:
+            restored.close()
+
+        for entry in entries_of(files):
+            shutil.move(str(stash / entry), str(final / entry))
+        again = Engine(engine.config, "direct")
+        try:
+            handle = again.handles[record["id"]]
+            wait_until(lambda: again.tick() or handle.status().is_seeding, 20)
+            assert again.records[record["id"]]["storage"]["error"] is None
+        finally:
+            again.close()
