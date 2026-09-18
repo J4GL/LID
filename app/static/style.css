@@ -416,7 +416,7 @@ i {
 }
 .table-labels {
   display: grid;
-  grid-template-columns: 2.3fr 1.4fr 1.2fr 88px;
+  grid-template-columns: 2fr 1.8fr 1.1fr 88px;
   font-size: 0.62rem;
   letter-spacing: 0.1em;
   color: #79818e;
@@ -427,7 +427,7 @@ i {
 }
 .torrent-row {
   display: grid;
-  grid-template-columns: 2.3fr 1.4fr 1.2fr 88px;
+  grid-template-columns: 2fr 1.8fr 1.1fr 88px;
   gap: 20px;
   align-items: center;
   min-height: 110px;
@@ -491,6 +491,7 @@ i {
   font-weight: 500;
   color: #c7ced9;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 progress {
   appearance: none;
