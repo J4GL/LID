@@ -239,6 +239,31 @@ def test_actual_cross_filesystem_move(tmp_path):
             )
 
 
+def journal_interrupted_move(engine, record, files, target):
+    """Close the engine and rewrite its manifest as a move cut short mid-flight."""
+    engine.close()
+    manifest = json.loads(engine.manifest.read_text())
+    saved = manifest[record["id"]]["storage"]
+    completed = str(engine.config.storage.completed)
+    saved.update(
+        completion_seen=True,
+        phase="moving",
+        target=str(target),
+        target_root=completed,
+        target_id=engine.moves.registry.roots()[completed],
+        journal={
+            "source_root": saved["root"],
+            "source_id": saved["root_id"],
+            "target_root": completed,
+            "target_id": engine.moves.registry.roots()[completed],
+            "files": [
+                {"path": name, "size": len(body)} for name, body in files.items()
+            ],
+        },
+    )
+    engine.manifest.write_text(json.dumps(manifest))
+
+
 @pytest.mark.parametrize("layout", ["source", "destination", "split", "corrupt"])
 def test_interrupted_move_recovery_never_downloads_missing_data(tmp_path, layout):
     with transfer(tmp_path, "direct", multi=True) as (engine, record, _, files):
@@ -249,30 +274,7 @@ def test_interrupted_move_recovery_never_downloads_missing_data(tmp_path, layout
         state = record["storage"]
         source = Path(state["path"])
         target = engine.config.storage.completed / "direct" / record["id"]
-        engine.close()
-        manifest = json.loads(engine.manifest.read_text())
-        saved = manifest[record["id"]]["storage"]
-        saved.update(
-            completion_seen=True,
-            phase="moving",
-            target=str(target),
-            target_root=str(engine.config.storage.completed),
-            target_id=engine.moves.registry.roots()[
-                str(engine.config.storage.completed)
-            ],
-            journal={
-                "source_root": saved["root"],
-                "source_id": saved["root_id"],
-                "target_root": str(engine.config.storage.completed),
-                "target_id": engine.moves.registry.roots()[
-                    str(engine.config.storage.completed)
-                ],
-                "files": [
-                    {"path": name, "size": len(body)} for name, body in files.items()
-                ],
-            },
-        )
-        engine.manifest.write_text(json.dumps(manifest))
+        journal_interrupted_move(engine, record, files, target)
         if layout in ("destination", "corrupt"):
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(source), str(target))
@@ -311,6 +313,50 @@ def test_interrupted_move_recovery_never_downloads_missing_data(tmp_path, layout
                     (target / name).read_bytes() == body for name, body in files.items()
                 )
                 assert restored.handles[record["id"]].status().is_seeding
+        finally:
+            restored.close()
+
+
+@pytest.mark.parametrize("complete_side", ["source", "destination"])
+def test_storage_move_001_recovers_from_the_complete_side_and_discards_the_stale_copy(
+    tmp_path, complete_side
+):
+    with transfer(tmp_path, "direct", multi=True) as (engine, record, _, files):
+        engine.moves.next_scan = float("inf")
+        wait_until(
+            lambda: engine.tick() or engine.handles[record["id"]].status().is_seeding
+        )
+        source = Path(record["storage"]["path"])
+        target = engine.config.storage.completed / "direct" / record["id"]
+        journal_interrupted_move(engine, record, files, target)
+        first, second = list(files)
+        if complete_side == "source":
+            # A copy-then-delete move cut short: one file fully copied to the
+            # destination, the next one truncated, everything still at the source.
+            (target / first).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source / first, target / first)
+            (target / second).parent.mkdir(parents=True, exist_ok=True)
+            (target / second).write_bytes(files[second][:1024])
+        else:
+            # Cut short just before the last source file was unlinked.
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(source), str(target))
+            (source / first).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(target / first, source / first)
+
+        restored = Engine(engine.config, "direct")
+        try:
+            entry = restored.records[record["id"]]
+            wait_moved(restored, entry)
+            assert all(
+                (target / name).read_bytes() == body for name, body in files.items()
+            )
+            assert entry["storage"]["path"] == str(target)
+            assert restored.handles[record["id"]].status().is_seeding
+            # Nothing of the torrent is left behind on the discarded side.
+            assert not source.exists() or not any(
+                p.is_file() for p in source.rglob("*")
+            )
         finally:
             restored.close()
 

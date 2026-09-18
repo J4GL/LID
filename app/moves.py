@@ -118,6 +118,35 @@ class CompletionMoves:
         except OSError:
             return False
 
+    @staticmethod
+    def discard_stale(path, files):
+        # Only the interrupted move's own files, and only the directories they
+        # leave empty: rmdir refuses anything that still holds other data.
+        root = Path(path)
+        base = root.resolve()
+        parents = set()
+        for entry in files:
+            item = root / entry["path"]
+            if not item.resolve().is_relative_to(base):
+                continue
+            try:
+                item.unlink()
+            except OSError:
+                pass
+            for parent in item.parents:
+                if parent == root:
+                    break
+                parents.add(parent)
+        for folder in sorted(parents, key=lambda p: len(p.parts), reverse=True):
+            try:
+                folder.rmdir()
+            except OSError:
+                pass
+        try:
+            root.rmdir()
+        except OSError:
+            pass
+
     def prepare_restore(self, record, params):
         state = record["storage"]
         journal = state["journal"]
@@ -129,27 +158,25 @@ class CompletionMoves:
             target = self.valid_path(
                 record, journal["target_root"], journal["target_id"]
             )
-            source_full = self.complete_files(source, journal["files"])
-            target_full = self.complete_files(target, journal["files"])
-            source_has_files = source.exists() and any(
-                p.is_file() or p.is_symlink() for p in source.rglob("*")
-            )
-            target_has_files = target.exists() and any(
-                p.is_file() or p.is_symlink() for p in target.rglob("*")
-            )
-            if target_full and not source_has_files:
+            # A move copies before it unlinks, so an interruption normally leaves
+            # a complete copy on one side and a partial one on the other. The
+            # partial side holds no unique data, so it is dropped once the kept
+            # side passes its hash check.
+            if self.complete_files(target, journal["files"]):
                 state.update(
                     path=str(target),
                     root=journal["target_root"],
                     root_id=journal["target_id"],
                     recovery_destination=True,
+                    stale_copy=str(source),
                 )
-            elif source_full and not target_has_files:
+            elif self.complete_files(source, journal["files"]):
                 state.update(
                     path=str(source),
                     root=journal["source_root"],
                     root_id=journal["source_id"],
                     recovery_destination=False,
+                    stale_copy=str(target),
                 )
             else:
                 state.update(
@@ -323,6 +350,9 @@ class CompletionMoves:
         ):
             handle = self.engine.handles[key]
             if handle.status().is_seeding:
+                stale = state.pop("stale_copy", None)
+                if stale and state["journal"]:
+                    self.discard_stale(stale, state["journal"]["files"])
                 state.update(
                     phase="done"
                     if state.pop("recovery_destination", False)
