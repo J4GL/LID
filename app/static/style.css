@@ -456,8 +456,15 @@ i {
   font-size: 0.68rem;
   color: #8d95a3;
 }
+.progress-state {
+  display: flex;
+  gap: 5px;
+  align-items: baseline;
+  min-width: 0;
+}
 .torrent-last-upload {
   font-variant-numeric: tabular-nums;
+  color: #8d95a3;
 }
 .badge {
   padding: 2px 6px;

@@ -1,6 +1,6 @@
 ## SEED-LASTUP-001 — Un torrent terminé affiche son dernier envoi en relatif
 
-Implement: `Engine.snapshot` dans `app/engine.py` (lignes exposées via `Manager.state` dans `app/manager.py` vers `GET /api/torrents` et la SSE `/api/events` dans `app/main.py`), rendu par `render()` dans `app/static/app.js` via le helper `app/static/timeago.js` et les clés `torrent.last_upload*` dans `app/static/i18n.js`.
+Implement: `Engine.snapshot` dans `app/engine.py` (lignes exposées via `Manager.state` dans `app/manager.py` vers `GET /api/torrents` et la SSE `/api/events` dans `app/main.py`), rendu par `render()` dans `app/static/app.js` via le helper `app/static/timeago.js` et les clés `torrent.last_upload*` dans `app/static/i18n.js`. L'âge s'affiche entre parenthèses à droite de l'état, dans `.progress-label` : `Seeding ( Last upload: 7m ago )`.
 Uses: [Server binding](../server/bind.md)
 
 Test: unit · `tests/test_seeding.py` · `test_seed_lastup_001_snapshot_exposes_last_upload_and_finished_anchors`
