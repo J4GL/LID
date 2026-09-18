@@ -591,7 +591,17 @@ class Engine:
             self.request_saves()
             self.last_save = time.monotonic()
         if time.monotonic() >= self.next_sweep:
-            self._sweep_inactive()
+            # The first sweep runs before any snapshot, so refresh the anchors
+            # here too: an index predating activity tracking has none, and a
+            # missing anchor would fall back to `added_at` and drop live seeds.
+            now = time.time()
+            refreshed = False
+            for key, record in list(self.records.items()):
+                if self.track_activity(key, record, now):
+                    refreshed = True
+            if refreshed:
+                self.persist()
+            self._sweep_inactive(now)
             self.next_sweep = time.monotonic() + SWEEP_INTERVAL
 
     def resolve_torrent_nodes(self):

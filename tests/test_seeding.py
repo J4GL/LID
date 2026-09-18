@@ -194,6 +194,38 @@ def test_seed_autorm_001_sweep_removes_only_stale_finished_seeds(config, tmp_pat
         engine.close()
 
 
+def test_seed_autorm_002_sweep_refreshes_anchors_before_removing(config):
+    # Direct mode: tick() refreshes the proxy health, which would block a sweep.
+    engine = Engine(config, "direct")
+    try:
+        now = time.time()
+        key = "8" * 40
+        legacy = record(key, mode="direct", now=now)
+        # An index written before activity tracking: no anchors at all.
+        del legacy["last_upload_at"]
+        del legacy["finished_at"]
+        engine.records[key] = legacy
+        engine.handles[key] = SimpleNamespace(
+            status=lambda: fake_status(has_metadata=True),
+            save_resume_data=lambda *args: None,
+        )
+        (engine.folder / f"{key}.source").write_bytes(b"source")
+        (engine.folder / f"{key}.resume").write_bytes(b"resume")
+
+        engine.tick()
+
+        assert key in engine.records
+        assert engine.records[key]["finished_at"] == pytest.approx(now, abs=60)
+
+        engine.records[key]["finished_at"] = now - INACTIVE_TTL - DAY
+        engine.next_sweep = 0
+        engine.tick()
+
+        assert key not in engine.records
+    finally:
+        engine.close()
+
+
 def test_seed_autorm_001_sweep_skips_proxy_blocked_and_unallowed(config):
     engine = Engine(config, "proxy")
     try:
