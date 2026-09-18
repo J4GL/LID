@@ -3,6 +3,7 @@
 - [Service installation](service/systemd.md)
 - [Service upgrade](service/upgrade.md)
 - [Server binding](server/bind.md)
+- [Static asset caching](server/static-cache.md)
 - [Interrupted move recovery](storage/interrupted-move.md)
 - [Seeding last-upload](seeding/last-upload.md)
 - [Seeding auto-remove](seeding/auto-remove.md)

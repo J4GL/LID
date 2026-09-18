@@ -29,6 +29,19 @@ STATIC = Path(__file__).parent / "static"
 Mode = Literal["direct", "proxy"]
 
 
+class RevalidatedStatic(StaticFiles):
+    """Serve the dashboard assets under revalidation.
+
+    Heuristic caching keeps serving the previous app.js after an upgrade; the
+    ETag still answers 304 for a file that has not changed.
+    """
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 class Magnet(BaseModel):
     mode: Mode
     magnet: str = Field(min_length=10, max_length=32768)
@@ -442,5 +455,5 @@ def create_app(
             headers={"X-Accel-Buffering": "no"},
         )
 
-    app.mount("/static", StaticFiles(directory=STATIC), name="static")
+    app.mount("/static", RevalidatedStatic(directory=STATIC), name="static")
     return app

@@ -101,3 +101,15 @@ def test_host_rebinding_and_static_content():
         assert state["total_downloaded"] == 0
         assert state["total_uploaded"] == 0
         assert state["global_ratio"] == 0
+
+
+def test_server_static_001_static_files_must_be_revalidated():
+    with TestClient(create_app(Config(), FakeManager)) as client:
+        response = client.get("/static/app.js")
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-cache"
+        etag = response.headers["etag"]
+
+        cached = client.get("/static/app.js", headers={"If-None-Match": etag})
+        assert cached.status_code == 304
+        assert not cached.content
