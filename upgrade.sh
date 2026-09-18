@@ -70,15 +70,52 @@ fi
 
 AFTER="$("$GIT" rev-parse HEAD)"
 
+service_running() {
+  run_systemctl is-active --quiet lid.service
+}
+
+# A restart interrupts whatever the engine is doing, a move in flight included,
+# so nothing new from GitHub means nothing to restart.
 if [[ "$AFTER" == "$BEFORE" ]]; then
-  echo "LID is already up to date ($AFTER)."
-else
-  echo "LID updated from $BEFORE to $AFTER."
+  echo "LID is already up to date ($AFTER); the service was left alone."
+  if ! service_running; then
+    echo "lid.service was not running: starting it." >&2
+    run_systemctl start lid.service
+  fi
+  exit 0
 fi
 
+echo "LID updated from $BEFORE to $AFTER."
+
+# Stopping the engine flushes to disk, so the restart below is silent for a
+# while. An upgrade cut short there must still leave the dashboard running:
+# start unconditionally, since a stop already in flight can outlive the check.
+restore_service() {
+  echo "Interrupted: making sure lid.service is running." >&2
+  run_systemctl start lid.service || true
+  exit 130
+}
+trap restore_service INT TERM HUP
+
+echo "Restarting lid.service (stopping the engine can take a minute)…"
 run_systemctl daemon-reload
-run_systemctl restart lid.service
-run_systemctl is-active --quiet lid.service
+if ! run_systemctl restart lid.service; then
+  echo "WARNING: restart failed; starting lid.service instead." >&2
+  run_systemctl start lid.service || true
+fi
+if ! service_running; then
+  run_systemctl start lid.service || true
+  if ! service_running; then
+    echo "ERROR: lid.service is not running after the upgrade." >&2
+    if [[ "$MODE" == "user" ]]; then
+      echo "Check: systemctl --user status lid.service" >&2
+    else
+      echo "Check: systemctl status lid.service" >&2
+    fi
+    exit 1
+  fi
+fi
+trap - INT TERM HUP
 
 echo "LID $MODE service restarted with the latest version."
 if [[ "$MODE" == "user" ]]; then

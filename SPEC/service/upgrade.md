@@ -31,6 +31,51 @@ Test: unit · `tests/test_upgrade.py` · `test_lid_service_004_upgrades_checkout
 - Then: it runs `systemctl --user daemon-reload`, `systemctl --user restart lid.service` and
   verifies the service is active through `systemctl --user`
 
+## LID-SERVICE-006 — An interrupted upgrade never leaves the service stopped
+
+Stopping `lid.service` takes as long as the engine needs to flush, so `upgrade.sh` is silent for
+a while during the restart. Interrupting it there must not leave the dashboard down.
+
+Implement: `upgrade.sh`, restarting the service under a signal handler that starts it back.
+Uses: [Service installation](systemd.md)
+
+Test: unit · `tests/test_upgrade.py` · `test_lid_service_006_interrupted_upgrade_leaves_the_service_running`
+- Given: a LID checkout with an installed user-mode `lid.service` unit and a recording `systemctl`
+  whose `restart` is slow
+- When: `upgrade.sh` is interrupted with `SIGINT` while the restart is running
+- Then: it exits non-zero after asking `systemctl` to start `lid.service` again
+
+## LID-SERVICE-007 — An upgrade that leaves the service inactive fails loudly
+
+Implement: `upgrade.sh`, verifying the service is active after the restart.
+Uses: [Service installation](systemd.md)
+
+Test: unit · `tests/test_upgrade.py` · `test_lid_service_007_reports_a_service_that_stays_inactive`
+- Given: a LID checkout with an installed user-mode `lid.service` unit and a recording `systemctl`
+  that reports the service as inactive
+- When: `upgrade.sh` is executed
+- Then: it retries the start, exits non-zero and names `lid.service` on standard error instead of
+  stopping silently
+
+## LID-SERVICE-008 — An upgrade with nothing new never restarts the service
+
+Restarting interrupts whatever the engine is doing, including a move in flight, so a checkout that
+already matches `origin` is left alone. The service is only started when it is not running.
+
+Implement: `upgrade.sh`, comparing the checkout's commit before and after the fast-forward.
+Uses: [Service installation](systemd.md)
+
+Test: unit · `tests/test_upgrade.py` · `test_lid_service_008_up_to_date_checkout_is_not_restarted`
+- Given: a checkout already at `origin`'s commit, an installed user-mode `lid.service` unit and a
+  recording `systemctl` reporting the service as active
+- When: `upgrade.sh` is executed
+- Then: it exits zero reporting the checkout is up to date, and asks `systemctl` only whether the
+  service is active, without a `daemon-reload` or a `restart`
+
+- Given: the same checkout, with a recording `systemctl` reporting the service as inactive
+- When: `upgrade.sh` is executed
+- Then: it exits zero after starting `lid.service`, without a `restart`
+
 ## LID-SERVICE-005 — Upgrade aborts without touching data when the checkout has diverged
 
 Implement: `upgrade.sh`, run from a LID checkout that has local commits not present on `origin`.
