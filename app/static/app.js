@@ -1,5 +1,6 @@
 import { installDropZones } from "./drop.js";
 import { installFolderSettings } from "./folders.js";
+import { formatAgo } from "./timeago.js";
 import {
   getLanguage,
   initI18n,
@@ -139,7 +140,7 @@ function render(data) {
       node.className = "torrent-row";
       node.dataset.mode = row.mode;
       node.innerHTML =
-        '<div class="torrent-info"><h3 class="torrent-name"></h3><div class="torrent-meta"><span class="badge"></span><span class="torrent-size"></span><span class="torrent-peers"></span><span class="torrent-ratio"></span><span class="torrent-volumes"></span></div></div><div class="torrent-progress"><div class="progress-label"><span class="torrent-state"></span><strong class="torrent-percent"></strong></div><progress max="1" value="0"></progress></div><div class="transfer-speeds"><span class="torrent-down"></span><span class="torrent-up"></span></div><div class="torrent-actions"><button class="icon-button pause-action"></button><button class="icon-button remove-action">✕</button></div><div class="torrent-location"><span class="torrent-path"></span><span class="move-target" hidden></span><span class="move-error" hidden></span><button class="text-button retry-move" hidden></button></div><p class="torrent-error" hidden></p>';
+        '<div class="torrent-info"><h3 class="torrent-name"></h3><div class="torrent-meta"><span class="badge"></span><span class="torrent-size"></span><span class="torrent-peers"></span><span class="torrent-ratio"></span><span class="torrent-volumes"></span><span class="torrent-last-upload" hidden></span></div></div><div class="torrent-progress"><div class="progress-label"><span class="torrent-state"></span><strong class="torrent-percent"></strong></div><progress max="1" value="0"></progress></div><div class="transfer-speeds"><span class="torrent-down"></span><span class="torrent-up"></span></div><div class="torrent-actions"><button class="icon-button pause-action"></button><button class="icon-button remove-action">✕</button></div><div class="torrent-location"><span class="torrent-path"></span><span class="move-target" hidden></span><span class="move-error" hidden></span><button class="text-button retry-move" hidden></button></div><p class="torrent-error" hidden></p>';
       rowNodes.set(row.id, node);
       $("torrent-list").append(node);
       node.querySelector(".pause-action").onclick = () => torrentAction(row.id);
@@ -186,6 +187,20 @@ function render(data) {
       downloaded: formatBytes(row.downloaded),
       uploaded: formatBytes(row.uploaded),
     });
+    const lastUpload = q(".torrent-last-upload");
+    if (row.state_code === "seeding" || row.state_code === "finished") {
+      lastUpload.hidden = false;
+      lastUpload.textContent = t("torrent.last_upload", {
+        value: formatAgo(
+          row.last_upload_at ?? null,
+          Date.now() / 1000,
+          getLanguage(),
+        ),
+      });
+    } else {
+      lastUpload.hidden = true;
+      lastUpload.textContent = "";
+    }
     q(".torrent-state").textContent = t(`state.${row.state_code || "waiting"}`);
     q(".torrent-percent").textContent = `${(row.progress * 100).toFixed(1)} %`;
     q("progress").value = row.progress;

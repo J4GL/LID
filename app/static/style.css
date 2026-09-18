@@ -456,6 +456,9 @@ i {
   font-size: 0.68rem;
   color: #8d95a3;
 }
+.torrent-last-upload {
+  font-variant-numeric: tabular-nums;
+}
 .badge {
   padding: 2px 6px;
   border-radius: 3px;

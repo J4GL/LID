@@ -59,6 +59,7 @@ class Manager:
                                     "mode": mode,
                                     "hashes": record["hashes"],
                                 }
+                            self.reconcile_known(mode)
                         elif message.get("event") == "fatal":
                             self.mark_dead(mode, message["error"])
                         elif message.get("id") in self.pending:
@@ -77,6 +78,24 @@ class Manager:
                         mode, f"Moteur {mode} arrêté. Redémarrez l'application."
                     )
             await asyncio.sleep(0.05)
+
+    def reconcile_known(self, mode):
+        """Drop known ids of `mode` missing from its latest snapshot.
+
+        Engines may remove torrents on their own (inactive-seed sweep);
+        without this, `known` would keep stale ids pointing at gone
+        torrents. Only the snapshotted mode is reconciled.
+        """
+        ids = {
+            record["id"]
+            for record in self.snapshots.get(mode, {}).get("torrents", [])
+        }
+        for key in [
+            key
+            for key, entry in self.known.items()
+            if entry.get("mode") == mode and key not in ids
+        ]:
+            self.known.pop(key, None)
 
     def mark_dead(self, mode, error):
         snapshot = self.snapshots.setdefault(

@@ -25,6 +25,13 @@ from .moves import CompletionMoves
 from .error_codes import error_code, proxy_message_code
 
 
+#: A finished torrent with no uploaded packet for longer than this is
+#: removed automatically (files on disk are kept). Strictly greater-than.
+INACTIVE_TTL = 7 * 24 * 3600
+#: Minimum delay between two inactivity sweeps in the engine tick loop.
+SWEEP_INTERVAL = 60
+
+
 class Engine:
     def __init__(self, config, mode):
         self.config, self.mode = config, mode
@@ -44,6 +51,10 @@ class Engine:
                 raise ValueError(
                     "Index de reprise invalide : mode ou infohash incohérent."
                 )
+            # Pre-sweep records reuse the same anchors; missing keys mean the
+            # index predates activity tracking.
+            record.setdefault("last_upload_at", None)
+            record.setdefault("finished_at", None)
         self.handles = {}
         self.session = None
         self.pending_save = set()
@@ -65,6 +76,7 @@ class Engine:
         self.health_future = None
         self.next_health = 0
         self.next_bootstrap = 0
+        self.next_sweep = 0
         self.last_save = time.monotonic()
         self.moves = CompletionMoves(self)
         if mode == "direct":
@@ -192,6 +204,8 @@ class Engine:
             "kind": "file" if isinstance(source, bytes) else "magnet",
             "paused": False,
             "added_at": time.time(),
+            "last_upload_at": None,
+            "finished_at": None,
             "error": None,
             "storage": self.moves.new_record(key),
             "dht_nodes": normalize_nodes(params.dht_nodes)
@@ -235,9 +249,11 @@ class Engine:
             # Remove manifest first; stale resume alerts are discarded below.
             self.records.pop(key)
             self.persist()
-            if handle:
+            if handle is not None and self.session is not None:
                 self.session.remove_torrent(handle)  # Never delete payload files.
                 self.handles.pop(key)
+            else:
+                self.handles.pop(key, None)
             self.pending_save.discard(key)
             for suffix in ("source", "resume"):
                 (self.folder / f"{key}.{suffix}").unlink(missing_ok=True)
@@ -348,9 +364,108 @@ class Engine:
                 # No direct fallback in libtorrent; trigger a fresh health probe.
                 self.next_health = 0
 
+    def track_activity(self, key, record, now=None):
+        """Refresh the seeding-activity anchors from live libtorrent status.
+
+        `last_upload_at` follows `time_since_upload` monotonically so a
+        session restart (whose counters start over) never moves it backwards.
+        Returns True when an anchor changed and the index should persist.
+        """
+        now = time.time() if now is None else now
+        changed = False
+        if "last_upload_at" not in record:
+            record["last_upload_at"] = None
+            changed = True
+        if "finished_at" not in record:
+            record["finished_at"] = None
+            changed = True
+        handle = self.handles.get(key)
+        if handle is None:
+            return changed
+        try:
+            status = handle.status()
+        except Exception:
+            return changed
+        since_upload = getattr(status, "time_since_upload", -1)
+        if since_upload is not None and since_upload >= 0:
+            candidate = now - since_upload
+            if record["last_upload_at"] is None or candidate > record["last_upload_at"]:
+                record["last_upload_at"] = candidate
+                changed = True
+        if (getattr(status, "upload_payload_rate", 0) or 0) > 0:
+            if record["last_upload_at"] is None or now - record["last_upload_at"] >= 1:
+                record["last_upload_at"] = now
+                changed = True
+        if record.get("finished_at") is None and (
+            bool(getattr(status, "is_seeding", False))
+            or bool(getattr(status, "is_finished", False))
+        ):
+            record["finished_at"] = now
+            changed = True
+        return changed
+
+    def _sweep_eligible(self, key, record, now):
+        if record.get("error") or record.get("paused"):
+            return False
+        storage = record.get("storage") or {}
+        if storage.get("phase") in ("moving", "verifying", "pending", "failed"):
+            return False
+        if storage.get("error"):
+            return False
+        handle = self.handles.get(key)
+        if handle is None:
+            return False
+        try:
+            status = handle.status()
+        except Exception:
+            return False
+        try:
+            state = int(status.state)
+        except (TypeError, ValueError):
+            state = -1
+        finished = (
+            bool(getattr(status, "is_seeding", False))
+            or bool(getattr(status, "is_finished", False))
+            or state in (4, 5)
+        )
+        if not finished:
+            return False
+        anchor = (
+            record.get("last_upload_at")
+            or record.get("finished_at")
+            or record.get("added_at")
+        )
+        if anchor is None:
+            return False
+        return (now - anchor) > INACTIVE_TTL
+
+    def _sweep_inactive(self, now=None):
+        """Remove finished torrents idle for longer than INACTIVE_TTL.
+
+        Payload files are kept: this reuses `action(key, "remove")`. Returns
+        the list of removed ids. Never runs while uploads are impossible
+        (proxy blocked), so an outage cannot wipe the list.
+        """
+        now = time.time() if now is None else now
+        if not self.allowed():
+            return []
+        removed = []
+        for key, record in list(self.records.items()):
+            if not self._sweep_eligible(key, record, now):
+                continue
+            try:
+                self.action(key, "remove")
+            except Exception:
+                continue
+            removed.append(key)
+        return removed
+
     def snapshot(self):
         rows = []
+        persist = False
         for key, record in self.records.items():
+            if self.track_activity(key, record):
+                persist = True
             row = {
                 k: v
                 for k, v in record.items()
@@ -437,6 +552,8 @@ class Engine:
                 error_code(storage.get("error")) if storage.get("error") else None
             )
             rows.append(row)
+        if persist:
+            self.persist()
         proxy = (
             {k: v for k, v in self.proxy.items() if k != "bootstrap"}
             if self.mode == "proxy"
@@ -473,6 +590,9 @@ class Engine:
         if time.monotonic() - self.last_save >= self.config.seeding.save_interval:
             self.request_saves()
             self.last_save = time.monotonic()
+        if time.monotonic() >= self.next_sweep:
+            self._sweep_inactive()
+            self.next_sweep = time.monotonic() + SWEEP_INTERVAL
 
     def resolve_torrent_nodes(self):
         if self.mode != "proxy":

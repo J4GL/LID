@@ -33,8 +33,16 @@ test("English is the default and the French choice is persisted", () => {
   assert.equal(i18n.t("metrics.ratio"), "Ratio global");
   assert.equal(storage.get("p2p-language"), "fr");
   assert.equal(document.documentElement.lang, "fr");
+  assert.equal(
+    i18n.t("torrent.last_upload", { value: "il y a 6 h" }),
+    "Dernier envoi : il y a 6 h",
+  );
 
   i18n.setLanguage("en");
+  assert.equal(
+    i18n.t("torrent.last_upload", { value: "6h ago" }),
+    "Last upload: 6h ago",
+  );
   assert.equal(storage.get("p2p-language"), "en");
   assert.equal(
     i18n.localizedError("storage_full"),
