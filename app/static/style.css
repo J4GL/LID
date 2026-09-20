@@ -263,7 +263,49 @@ h1 {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 20px;
   padding-bottom: 20px;
+}
+.disk-widget {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  font-size: 0.76rem;
+  color: #a1a5ad;
+}
+.disk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.disk-label {
+  color: #79818e;
+  letter-spacing: 0.06em;
+  font-size: 0.68rem;
+}
+.disk-bar {
+  display: inline-block;
+  width: 72px;
+  height: 4px;
+  border-radius: 4px;
+  background: #2b303a;
+  overflow: hidden;
+}
+.disk-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+}
+.disk-bar.ok .disk-fill {
+  background: var(--green);
+}
+.disk-bar.warn .disk-fill {
+  background: #c9b481;
+}
+.disk-bar.full .disk-fill {
+  background: var(--red);
 }
 .list-heading h2 {
   font-size: 1rem;
@@ -416,7 +458,7 @@ i {
 }
 .table-labels {
   display: grid;
-  grid-template-columns: 2.3fr 1.8fr 0.9fr 88px;
+  grid-template-columns: 2.3fr 1.8fr 0.9fr 124px;
   font-size: 0.62rem;
   letter-spacing: 0.1em;
   color: #79818e;
@@ -427,7 +469,7 @@ i {
 }
 .torrent-row {
   display: grid;
-  grid-template-columns: 2.3fr 1.8fr 0.9fr 88px;
+  grid-template-columns: 2.3fr 1.8fr 0.9fr 124px;
   gap: 20px;
   align-items: center;
   min-height: 110px;
@@ -535,8 +577,40 @@ progress::-moz-progress-bar {
 }
 .torrent-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 7px;
   justify-content: flex-end;
+}
+.delete-action:hover:not(:disabled) {
+  background: #3a2328;
+  border-color: #5a3038;
+  color: var(--red);
+}
+.delete-confirm {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  background: #f184860c;
+  border: 1px solid #f1848630;
+  border-radius: 7px;
+  padding: 10px 14px;
+  font-size: 0.8rem;
+}
+.delete-confirm-text {
+  flex: 1;
+  min-width: 200px;
+}
+.button.danger {
+  background: var(--red);
+  border-color: var(--red);
+  color: #16181d;
+  padding: 8px 14px;
+}
+.button.danger:hover:not(:disabled) {
+  background: #ff9ba0;
+  border-color: #ff9ba0;
 }
 .icon-button {
   display: inline-flex;

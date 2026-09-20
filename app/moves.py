@@ -207,20 +207,27 @@ class CompletionMoves:
         raise StorageUnavailable(MISSING_PAYLOAD)
 
     @staticmethod
-    def discard_stale(path, files, *, prune_root=True):
+    def discard_stale(path, files, *, prune_root=True, errors=None):
         # Only the interrupted move's own files, and only the directories they
         # leave empty: rmdir refuses anything that still holds other data.
+        # With `errors`, each skipped or failed entry is reported instead of
+        # silently ignored; already-gone files are never an error.
         root = Path(path)
         base = root.resolve()
         parents = set()
         for entry in files:
             item = root / entry["path"]
             if not item.resolve().is_relative_to(base):
+                if errors is not None:
+                    errors.append(str(item))
                 continue
             try:
                 item.unlink()
-            except OSError:
+            except FileNotFoundError:
                 pass
+            except OSError:
+                if errors is not None:
+                    errors.append(str(item))
             for parent in item.parents:
                 if parent == root:
                     break

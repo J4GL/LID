@@ -1,5 +1,7 @@
 import asyncio
 import multiprocessing
+import os
+import shutil
 import time
 import uuid
 
@@ -235,9 +237,43 @@ class Manager:
             if key not in self.known:
                 raise KeyError(key)
             result = await self.rpc(self.known[key]["mode"], action, {"id": key})
-            if action == "remove":
+            if action in ("remove", "remove_with_files"):
                 self.known.pop(key, None)
             return result
+
+    def storage_disks(self):
+        """One disk-usage entry per storage root device.
+
+        Downloads and completed folders on the same device collapse into a
+        single entry; an unreadable root is omitted without failing the state.
+        """
+        disks = []
+        seen = set()
+        for label in ("downloads", "completed"):
+            root = getattr(self.config.storage, label, None)
+            if not root:
+                continue
+            try:
+                device = os.stat(root).st_dev
+            except OSError:
+                continue
+            if device in seen:
+                continue
+            seen.add(device)
+            try:
+                usage = shutil.disk_usage(root)
+            except OSError:
+                continue
+            disks.append(
+                {
+                    "label": label,
+                    "path": str(root),
+                    "total": usage.total,
+                    "used": usage.used,
+                    "free": usage.free,
+                }
+            )
+        return disks
 
     def state(self):
         rows = [
@@ -271,6 +307,7 @@ class Manager:
             else 0,
             "seeding": sum(r.get("state_code") == "seeding" for r in rows),
             "storage": {**self.folders.payload(), "pending": self.storage_pending},
+            "disks": self.storage_disks(),
         }
 
     async def close(self):

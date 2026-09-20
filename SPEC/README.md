@@ -10,6 +10,8 @@
 - [Flat layout migration](storage/migration.md)
 - [Seeding last-upload](seeding/last-upload.md)
 - [Seeding auto-remove](seeding/auto-remove.md)
+- [Disk usage](storage/disk-usage.md)
+- [Delete with files](storage/delete-with-files.md)
 
 Run the service installer specifications with:
 
@@ -20,5 +22,7 @@ Run the service installer specifications with:
 .venv/bin/python -m pytest tests/test_moves.py -q
 .venv/bin/python -m pytest tests/test_migrate.py -q
 .venv/bin/python -m pytest tests/test_seeding.py -q
+.venv/bin/python -m pytest tests/test_disk_usage.py -q
+.venv/bin/python -m pytest tests/test_remove_files.py -q
 node --test tests/timeago.test.mjs
 ```

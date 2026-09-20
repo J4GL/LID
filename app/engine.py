@@ -4,6 +4,7 @@ import concurrent.futures
 import json
 import os
 from pathlib import Path
+import shutil
 import signal
 import time
 
@@ -248,6 +249,89 @@ class Engine:
             raise
         return record
 
+    def plan_payload_deletion(self, record):
+        """Scope the files a `remove_with_files` may delete.
+
+        Runs before the torrent is detached, so a scope violation keeps the
+        torrent in the index. Returns an opaque plan for
+        `execute_payload_deletion`. Raises StorageUnavailable when the
+        recorded location disagrees with the validated roots.
+        """
+        state = record["storage"]
+        if state["layout"] != "flat":
+            # Nested staging is the torrent's own folder: validated whole.
+            return ("nested", self.moves.valid_path(record))
+        root = self.moves.valid_path(record)
+        files = None
+        handle = self.handles.get(record["id"])
+        if handle is not None:
+            try:
+                info = handle.torrent_file()
+                files = self.moves.file_list(info, state["folder"]) if info else None
+            except Exception:
+                files = None
+        if files is None:
+            journal = state.get("journal") or {}
+            files = journal.get("files")
+        return ("flat", root, files or None)
+
+    def execute_payload_deletion(self, plan):
+        """Delete a planned payload best-effort.
+
+        Returns (files_deleted, file_errors); `files_deleted` is True when the
+        cleanup completed without errors. Never raises: the torrent is already
+        detached when this runs, so every failure is collected instead. A flat
+        final folder is shared, so only the torrent's own listed files, the
+        emptied directories they leave behind and their `.parts` sidecar may
+        go; symlinks and reserved names are always kept.
+        """
+        errors = []
+        if plan[0] == "nested":
+            path = plan[1]
+            if not os.path.lexists(path):
+                return True, []
+            if path.is_symlink() or not path.is_dir():
+                return False, [f"{path} : dossier du torrent attendu."]
+            def onerror(func, item, exc):
+                if exc[0] is not FileNotFoundError:
+                    errors.append(str(item))
+
+            try:
+                shutil.rmtree(path, onerror=onerror)
+            except OSError:
+                errors.append(str(path))
+            return (not errors), errors
+        _, root, files = plan
+        if not files:
+            return False, [
+                "Liste des fichiers inconnue : torrent retiré, fichiers conservés."
+            ]
+        owned = []
+        for entry in files:
+            top = Path(entry["path"]).parts[0]
+            item = root / entry["path"]
+            if self.moves.reserved(top):
+                errors.append(f"{item} : nom réservé, conservé.")
+            elif item.is_symlink():
+                errors.append(f"{item} : lien symbolique, conservé.")
+            else:
+                owned.append(entry)
+        self.moves.discard_stale(root, owned, prune_root=False, errors=errors)
+        for top in self.moves.entries_of(files):
+            if self.moves.reserved(top):
+                continue
+            parts = root / f"{top}.parts"
+            if parts.is_symlink():
+                errors.append(f"{parts} : lien symbolique, conservé.")
+            elif parts.is_file():
+                try:
+                    parts.unlink()
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    errors.append(str(parts))
+        return (not errors), errors
+
     def action(self, key, action):
         record = self.records[key]
         handle = self.handles.get(key)
@@ -257,22 +341,35 @@ class Engine:
             raise StorageUnavailable(record["storage"]["error"])
         if action == "resume" and not self.allowed():
             raise ProxyError(self.proxy["message"])
-        if action == "remove":
+        if action in ("remove", "remove_with_files"):
             if record["storage"]["phase"] in ("moving", "verifying"):
                 raise StorageUnavailable(
                     "Déplacement ou vérification en cours. Attendez la fin avant de retirer le torrent."
                 )
+            plan = None
+            if action == "remove_with_files":
+                # Scoped before detaching: a scope violation keeps the torrent.
+                plan = self.plan_payload_deletion(record)
             # Remove manifest first; stale resume alerts are discarded below.
             self.records.pop(key)
             self.persist()
             if handle is not None and self.session is not None:
-                self.session.remove_torrent(handle)  # Never delete payload files.
+                # A plain remove never deletes payload files; detaching first
+                # only releases file handles for `remove_with_files` below.
+                self.session.remove_torrent(handle)
                 self.handles.pop(key)
             else:
                 self.handles.pop(key, None)
             self.pending_save.discard(key)
             for suffix in ("source", "resume"):
                 (self.folder / f"{key}.{suffix}").unlink(missing_ok=True)
+            if action == "remove_with_files":
+                files_deleted, file_errors = self.execute_payload_deletion(plan)
+                return {
+                    "removed": key,
+                    "files_deleted": files_deleted,
+                    "file_errors": file_errors,
+                }
             return {"removed": key}
         record["paused"] = action == "pause"
         self.persist()

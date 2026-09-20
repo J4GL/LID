@@ -18,8 +18,10 @@ let token = "",
   addError = null,
   connectionStatus = "connecting";
 const rowNodes = new Map();
+const pendingDelete = new Map();
 const state = {
   torrents: [],
+  disks: [],
   proxy: { tcp: false, udp: false },
   download_rate: 0,
   upload_rate: 0,
@@ -111,8 +113,42 @@ function setMetric(id, n, suffix = "/s") {
   unit.textContent = parts[1] + suffix;
   $(id).append(unit);
 }
+function renderDisks(disks) {
+  const widget = $("disk-widget");
+  widget.replaceChildren();
+  if (!disks.length) {
+    widget.hidden = true;
+    return;
+  }
+  widget.hidden = false;
+  for (const disk of disks) {
+    const used = Math.max(0, Number(disk.used) || 0);
+    const total = Math.max(0, Number(disk.total) || 0);
+    const ratio = total ? used / total : 0;
+    const wrap = document.createElement("span");
+    wrap.className = "disk";
+    wrap.title = disk.path || "";
+    const label = document.createElement("span");
+    label.className = "disk-label";
+    label.textContent = t(
+      disk.label === "completed" ? "disk.completed" : "disk.downloads",
+    );
+    const text = document.createElement("span");
+    text.className = "disk-text";
+    text.textContent = `${formatBytes(used)} / ${formatBytes(total)}`;
+    const bar = document.createElement("span");
+    bar.className = `disk-bar ${ratio >= 0.9 ? "full" : ratio >= 0.8 ? "warn" : "ok"}`;
+    const fill = document.createElement("span");
+    fill.className = "disk-fill";
+    fill.style.width = `${Math.min(100, ratio * 100).toFixed(1)}%`;
+    bar.append(fill);
+    wrap.append(label, text, bar);
+    widget.append(wrap);
+  }
+}
 function render(data) {
   Object.assign(state, data);
+  renderDisks(data.disks || []);
   setMetric("total-down", data.download_rate);
   setMetric("total-up", data.upload_rate);
   $("global-ratio").textContent = Number(data.global_ratio || 0).toFixed(2);
@@ -130,6 +166,8 @@ function render(data) {
   const current = new Set(data.torrents.map((r) => r.id));
   for (const [id, node] of rowNodes)
     if (!current.has(id)) {
+      clearTimeout(pendingDelete.get(id));
+      pendingDelete.delete(id);
       node.remove();
       rowNodes.delete(id);
     }
@@ -140,12 +178,18 @@ function render(data) {
       node.className = "torrent-row";
       node.dataset.mode = row.mode;
       node.innerHTML =
-        '<div class="torrent-info"><h3 class="torrent-name"></h3><div class="torrent-meta"><span class="badge"></span><span class="torrent-size"></span><span class="torrent-peers"></span><span class="torrent-ratio"></span><span class="torrent-volumes"></span></div></div><div class="torrent-progress"><div class="progress-label"><span class="progress-state"><span class="torrent-state"></span><span class="torrent-last-upload" hidden></span></span><strong class="torrent-percent"></strong></div><progress max="1" value="0"></progress></div><div class="transfer-speeds"><span class="torrent-down"></span><span class="torrent-up"></span></div><div class="torrent-actions"><button class="icon-button pause-action"></button><button class="icon-button remove-action">✕</button></div><div class="torrent-location"><span class="torrent-path"></span><span class="move-target" hidden></span><span class="move-error" hidden></span><button class="text-button retry-move" hidden></button></div><p class="torrent-error" hidden></p>';
+        '<div class="torrent-info"><h3 class="torrent-name"></h3><div class="torrent-meta"><span class="badge"></span><span class="torrent-size"></span><span class="torrent-peers"></span><span class="torrent-ratio"></span><span class="torrent-volumes"></span></div></div><div class="torrent-progress"><div class="progress-label"><span class="progress-state"><span class="torrent-state"></span><span class="torrent-last-upload" hidden></span></span><strong class="torrent-percent"></strong></div><progress max="1" value="0"></progress></div><div class="transfer-speeds"><span class="torrent-down"></span><span class="torrent-up"></span></div><div class="torrent-actions"><button class="icon-button pause-action"></button><button class="icon-button remove-action">✕</button><button class="icon-button delete-action">\u{1F5D1}\uFE0E</button></div><div class="delete-confirm" hidden><span class="delete-confirm-text"></span><button class="button danger confirm-delete"></button><button class="text-button cancel-delete"></button></div><div class="torrent-location"><span class="torrent-path"></span><span class="move-target" hidden></span><span class="move-error" hidden></span><button class="text-button retry-move" hidden></button></div><p class="torrent-error" hidden></p>';
       rowNodes.set(row.id, node);
       $("torrent-list").append(node);
       node.querySelector(".pause-action").onclick = () => torrentAction(row.id);
       node.querySelector(".remove-action").onclick = () =>
         torrentAction(row.id, true);
+      node.querySelector(".delete-action").onclick = () =>
+        showDeleteConfirm(row.id);
+      node.querySelector(".cancel-delete").onclick = () =>
+        hideDeleteConfirm(row.id);
+      node.querySelector(".confirm-delete").onclick = () =>
+        torrentAction(row.id, true, true);
     }
     const q = (s) => node.querySelector(s);
     q(".torrent-path").textContent = row.save_path || "";
@@ -165,6 +209,21 @@ function render(data) {
     q(".remove-action").disabled = ["moving", "verifying"].includes(
       row.move_state,
     );
+    q(".delete-action").title = t("torrent.delete_files");
+    q(".delete-action").setAttribute(
+      "aria-label",
+      `${t("torrent.delete_files")} ${row.name}`,
+    );
+    q(".delete-action").disabled = ["moving", "verifying"].includes(
+      row.move_state,
+    );
+    q(".confirm-delete").textContent = t("torrent.delete_yes");
+    q(".cancel-delete").textContent = t("torrent.delete_no");
+    if (!q(".delete-confirm").hidden)
+      q(".delete-confirm-text").textContent = t("torrent.delete_confirm", {
+        name: row.name,
+        size: formatBytes(row.total),
+      });
     q(".retry-move").onclick = async () => {
       try {
         await api(`/api/torrents/${row.id}/retry-move`, { method: "POST" });
@@ -253,17 +312,47 @@ function render(data) {
   } else if ($("live-dot").classList.contains("live"))
     $("connection-error").hidden = true;
 }
-async function torrentAction(id, remove = false) {
+function showDeleteConfirm(id) {
+  const node = rowNodes.get(id);
+  const row = state.torrents.find((r) => r.id === id);
+  if (!node || !row) return;
+  clearTimeout(pendingDelete.get(id));
+  node.querySelector(".delete-confirm-text").textContent = t(
+    "torrent.delete_confirm",
+    { name: row.name, size: formatBytes(row.total) },
+  );
+  node.querySelector(".delete-confirm").hidden = false;
+  pendingDelete.set(
+    id,
+    setTimeout(() => hideDeleteConfirm(id), 15000),
+  );
+}
+function hideDeleteConfirm(id) {
+  clearTimeout(pendingDelete.get(id));
+  pendingDelete.delete(id);
+  const node = rowNodes.get(id);
+  if (node) node.querySelector(".delete-confirm").hidden = true;
+}
+async function torrentAction(id, remove = false, deleteFiles = false) {
   const row = state.torrents.find((r) => r.id === id);
   if (!row) return;
   try {
-    await api(
+    const result = await api(
       remove
-        ? `/api/torrents/${id}`
+        ? `/api/torrents/${id}${deleteFiles ? "?delete_files=true" : ""}`
         : `/api/torrents/${id}/${row.paused ? "resume" : "pause"}`,
       { method: remove ? "DELETE" : "POST" },
     );
-    if (remove) toast(() => t("toast.removed"));
+    if (remove) {
+      hideDeleteConfirm(id);
+      if (deleteFiles) {
+        const partial = !!result?.file_errors?.length;
+        toast(
+          () => t(partial ? "toast.delete_partial" : "toast.deleted_files"),
+          partial,
+        );
+      } else toast(() => t("toast.removed"));
+    }
     render(await api("/api/torrents"));
   } catch (e) {
     toastError(e);

@@ -338,6 +338,7 @@ def create_app(
                 "total_uploaded": 0,
                 "global_ratio": 0,
                 "seeding": 0,
+                "disks": [],
             }
         return request.app.state.manager.state()
 
@@ -412,11 +413,15 @@ def create_app(
             )
 
     @app.delete("/api/torrents/{key}")
-    async def remove(key: str, request: Request):
+    async def remove(
+        key: str, request: Request, delete_files: bool = Query(False)
+    ):
         if not request.app.state.manager:
             raise OperationError("Terminez la configuration initiale.")
         try:
-            return await request.app.state.manager.action(key, "remove")
+            return await request.app.state.manager.action(
+                key, "remove_with_files" if delete_files else "remove"
+            )
         except KeyError:
             return JSONResponse(
                 {"detail": "Torrent introuvable.", "code": "torrent_not_found"},
@@ -440,6 +445,7 @@ def create_app(
                         "total_uploaded": 0,
                         "global_ratio": 0,
                         "seeding": 0,
+                        "disks": [],
                     }
                 )
                 yield (
