@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="pages.css" />
+    <script src="route.js" type="module"></script>
+  </head>
+  <body>
+    <main>
+      <h1 data-i18n="route_title">Send to LID</h1>
+      <p class="pending-name" id="pending-name"></p>
+      <div class="route-picker">
+        <button class="route-choice direct" data-mode="direct">
+          <strong data-i18n="route_direct">Direct</strong>
+          <span data-i18n="route_direct_note">Your Internet connection</span>
+        </button>
+        <button class="route-choice proxy" data-mode="proxy">
+          <strong data-i18n="route_proxy">Proxy</strong>
+          <span data-i18n="route_proxy_note">Through the configured proxy</span>
+        </button>
+      </div>
+      <div class="route-foot">
+        <p class="status" id="route-status" role="status"></p>
+        <button class="text-button" id="route-cancel">
+          <span data-i18n="route_cancel">Cancel</span>
+        </button>
+      </div>
+    </main>
+  </body>
+</html>

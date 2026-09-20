@@ -37,6 +37,8 @@ loginctl enable-linger "$USER"
 
 Proxy mode is optional and disabled by default. When enabled, it is fail-closed: proxy torrents never fall back to the direct connection.
 
+A Chrome extension (Manifest V3, unpacked) captures `.torrent` downloads and magnet links into LID with a Direct/Proxy picker. See [extension/README.md](extension/README.md).
+
 ## Development
 
 ```sh

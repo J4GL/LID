@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="pages.css" />
+    <script src="options.js" type="module"></script>
+  </head>
+  <body>
+    <main>
+      <h1 data-i18n="options_title">LID server</h1>
+      <div class="field">
+        <label for="server-url" data-i18n="options_server">Server address</label>
+        <input id="server-url" type="url" required spellcheck="false" />
+      </div>
+      <div class="row">
+        <button class="button primary" id="save">
+          <span data-i18n="options_save">Save</span>
+        </button>
+        <button class="button" id="test">
+          <span data-i18n="options_test">Test connection</span>
+        </button>
+      </div>
+      <div class="route-foot">
+        <p class="status" id="options-status" role="status"></p>
+      </div>
+    </main>
+  </body>
+</html>

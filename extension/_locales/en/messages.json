@@ -1,0 +1,125 @@
+{
+  "ext_name": {
+    "message": "LID — Send to LID",
+    "description": "Extension name"
+  },
+  "ext_description": {
+    "message": "Send .torrent files and magnet links to your LID server, over direct or proxy.",
+    "description": "Extension description"
+  },
+  "menu_send": {
+    "message": "Send to LID",
+    "description": "Context menu item on links"
+  },
+  "route_title": {
+    "message": "Send to LID",
+    "description": "Route picker title"
+  },
+  "route_direct": {
+    "message": "Direct",
+    "description": "Direct route button"
+  },
+  "route_direct_note": {
+    "message": "Your Internet connection",
+    "description": "Direct route note"
+  },
+  "route_proxy": {
+    "message": "Proxy",
+    "description": "Proxy route button"
+  },
+  "route_proxy_note": {
+    "message": "Through the configured proxy",
+    "description": "Proxy route note"
+  },
+  "route_cancel": {
+    "message": "Cancel",
+    "description": "Cancel button"
+  },
+  "route_close": {
+    "message": "Close",
+    "description": "Close button"
+  },
+  "route_requesting": {
+    "message": "Requesting access to the site…",
+    "description": "Status while requesting origin permission"
+  },
+  "route_sending": {
+    "message": "Sending to LID…",
+    "description": "Status while uploading"
+  },
+  "route_denied": {
+    "message": "Access to this site was refused: download the .torrent and drop it into LID instead.",
+    "description": "Origin permission refused"
+  },
+  "notif_title": {
+    "message": "LID",
+    "description": "Notification title"
+  },
+  "notif_added": {
+    "message": "$1 added through $2.",
+    "description": "Torrent added notification",
+    "placeholders": {
+      "name": { "content": "$1" },
+      "mode": { "content": "$2" }
+    }
+  },
+  "notif_blob": {
+    "message": "This torrent cannot be captured automatically. Let it download, then drop the .torrent file into LID.",
+    "description": "Unfetchable download fallback"
+  },
+  "notif_not_torrent": {
+    "message": "This link is neither a magnet nor a .torrent file.",
+    "description": "Context menu on other links"
+  },
+  "options_title": {
+    "message": "LID server",
+    "description": "Options page title"
+  },
+  "options_server": {
+    "message": "Server address",
+    "description": "Server URL label"
+  },
+  "options_save": {
+    "message": "Save",
+    "description": "Save button"
+  },
+  "options_saved": {
+    "message": "Saved.",
+    "description": "Saved confirmation"
+  },
+  "options_test": {
+    "message": "Test connection",
+    "description": "Test button"
+  },
+  "options_testing": {
+    "message": "Testing…",
+    "description": "Testing status"
+  },
+  "options_ok": {
+    "message": "Server reachable. Proxy: $1.",
+    "description": "Server reachable",
+    "placeholders": {
+      "proxy": { "content": "$1" }
+    }
+  },
+  "options_no_proxy": {
+    "message": "none",
+    "description": "No proxy placeholder"
+  },
+  "action_open": {
+    "message": "Open LID",
+    "description": "Open dashboard button"
+  },
+  "action_options": {
+    "message": "Settings",
+    "description": "Open options button"
+  },
+  "action_checking": {
+    "message": "Checking…",
+    "description": "Status check in progress"
+  },
+  "action_ok": {
+    "message": "Connected",
+    "description": "Server connected"
+  }
+}

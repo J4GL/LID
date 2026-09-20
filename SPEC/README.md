@@ -12,6 +12,9 @@
 - [Seeding auto-remove](seeding/auto-remove.md)
 - [Disk usage](storage/disk-usage.md)
 - [Delete with files](storage/delete-with-files.md)
+- [Extension capture](extension/capture.md)
+- [Extension client](extension/client.md)
+- [Extension worker](extension/worker.md)
 
 Run the service installer specifications with:
 
@@ -25,4 +28,5 @@ Run the service installer specifications with:
 .venv/bin/python -m pytest tests/test_disk_usage.py -q
 .venv/bin/python -m pytest tests/test_remove_files.py -q
 node --test tests/timeago.test.mjs
+node --test tests/extension-capture.test.mjs tests/extension-client.test.mjs tests/extension-worker.test.mjs
 ```

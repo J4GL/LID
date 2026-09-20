@@ -1,0 +1,125 @@
+{
+  "ext_name": {
+    "message": "LID — Envoyer vers LID",
+    "description": "Nom de l’extension"
+  },
+  "ext_description": {
+    "message": "Envoie les fichiers .torrent et les liens magnet vers votre serveur LID, en direct ou via proxy.",
+    "description": "Description de l’extension"
+  },
+  "menu_send": {
+    "message": "Envoyer vers LID",
+    "description": "Élément de menu contextuel sur les liens"
+  },
+  "route_title": {
+    "message": "Envoyer vers LID",
+    "description": "Titre du choix de route"
+  },
+  "route_direct": {
+    "message": "Direct",
+    "description": "Bouton route directe"
+  },
+  "route_direct_note": {
+    "message": "Votre connexion Internet",
+    "description": "Note route directe"
+  },
+  "route_proxy": {
+    "message": "Proxy",
+    "description": "Bouton route proxy"
+  },
+  "route_proxy_note": {
+    "message": "Via le proxy configuré",
+    "description": "Note route proxy"
+  },
+  "route_cancel": {
+    "message": "Annuler",
+    "description": "Bouton d’annulation"
+  },
+  "route_close": {
+    "message": "Fermer",
+    "description": "Bouton de fermeture"
+  },
+  "route_requesting": {
+    "message": "Demande d’accès au site…",
+    "description": "Statut pendant la demande de permission"
+  },
+  "route_sending": {
+    "message": "Envoi vers LID…",
+    "description": "Statut pendant l’envoi"
+  },
+  "route_denied": {
+    "message": "Accès à ce site refusé : téléchargez le .torrent puis glissez-le dans LID.",
+    "description": "Permission d’origine refusée"
+  },
+  "notif_title": {
+    "message": "LID",
+    "description": "Titre des notifications"
+  },
+  "notif_added": {
+    "message": "$1 ajouté en mode $2.",
+    "description": "Notification de torrent ajouté",
+    "placeholders": {
+      "name": { "content": "$1" },
+      "mode": { "content": "$2" }
+    }
+  },
+  "notif_blob": {
+    "message": "Ce torrent ne peut pas être capturé automatiquement. Laissez-le se télécharger, puis glissez le fichier .torrent dans LID.",
+    "description": "Repli pour téléchargement non récupérable"
+  },
+  "notif_not_torrent": {
+    "message": "Ce lien n’est ni un magnet ni un fichier .torrent.",
+    "description": "Menu contextuel sur un autre lien"
+  },
+  "options_title": {
+    "message": "Serveur LID",
+    "description": "Titre de la page d’options"
+  },
+  "options_server": {
+    "message": "Adresse du serveur",
+    "description": "Étiquette de l’URL serveur"
+  },
+  "options_save": {
+    "message": "Enregistrer",
+    "description": "Bouton d’enregistrement"
+  },
+  "options_saved": {
+    "message": "Enregistré.",
+    "description": "Confirmation d’enregistrement"
+  },
+  "options_test": {
+    "message": "Tester la connexion",
+    "description": "Bouton de test"
+  },
+  "options_testing": {
+    "message": "Test…",
+    "description": "Statut de test"
+  },
+  "options_ok": {
+    "message": "Serveur joignable. Proxy : $1.",
+    "description": "Serveur joignable",
+    "placeholders": {
+      "proxy": { "content": "$1" }
+    }
+  },
+  "options_no_proxy": {
+    "message": "aucun",
+    "description": "Sans proxy"
+  },
+  "action_open": {
+    "message": "Ouvrir LID",
+    "description": "Bouton d’ouverture du tableau de bord"
+  },
+  "action_options": {
+    "message": "Réglages",
+    "description": "Bouton d’ouverture des options"
+  },
+  "action_checking": {
+    "message": "Vérification…",
+    "description": "Vérification du statut en cours"
+  },
+  "action_ok": {
+    "message": "Connecté",
+    "description": "Serveur connecté"
+  }
+}
