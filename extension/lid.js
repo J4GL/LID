@@ -4,17 +4,22 @@
 export const MAX_TORRENT_BYTES = 10 * 1024 * 1024;
 
 export class LidError extends Error {
-  constructor(code, message = "") {
+  constructor(code, message = "", data = null) {
     super(message || code);
     this.name = "LidError";
     this.code = code;
+    this.data = data;
   }
 }
 
 export class LidClient {
   constructor(serverUrl, fetchImpl = fetch) {
     this.base = String(serverUrl || "").replace(/\/+$/, "");
-    this.fetch = fetchImpl;
+    // Window.fetch requires its Window receiver: calling it back as a method
+    // (this.fetch) throws "Illegal invocation" in browsers. The closure keeps
+    // the injected implementation directly callable. (Node's fetch tolerates
+    // detached calls, so only a receiver-checking double catches this.)
+    this.fetch = (...args) => fetchImpl(...args);
     this.token = "";
   }
 
@@ -54,7 +59,11 @@ export class LidClient {
       throw new LidError("unexpected_response");
     }
     if (!response.ok) {
-      throw new LidError(data.code || "unexpected_response", data.detail || "");
+      throw new LidError(
+        data.code || "unexpected_response",
+        data.detail || "",
+        data,
+      );
     }
     return data;
   }
@@ -69,10 +78,23 @@ export class LidClient {
       new Blob([bytes], { type: "application/x-bittorrent" }),
       filename,
     );
-    const data = await this.request("/api/torrents/files", {
-      method: "POST",
-      body: form,
-    });
+    let data;
+    try {
+      data = await this.request("/api/torrents/files", {
+        method: "POST",
+        body: form,
+      });
+    } catch (error) {
+      // LID answers 409 with per-file results when every file fails.
+      const [failed] = error?.data?.results || [];
+      if (error instanceof LidError && failed && !failed.ok) {
+        throw new LidError(
+          failed.error_code || "unexpected_response",
+          failed.error || "",
+        );
+      }
+      throw error;
+    }
     const [result] = data.results || [];
     if (!result?.ok) {
       throw new LidError(

@@ -63,6 +63,14 @@
       "mode": { "content": "$2" }
     }
   },
+  "notif_added_local": {
+    "message": "$1 ajouté en mode $2. Vous pouvez supprimer le fichier local.",
+    "description": "Torrent ajouté, fichier navigateur déjà arrivé",
+    "placeholders": {
+      "name": { "content": "$1" },
+      "mode": { "content": "$2" }
+    }
+  },
   "notif_blob": {
     "message": "Ce torrent ne peut pas être capturé automatiquement. Laissez-le se télécharger, puis glissez le fichier .torrent dans LID.",
     "description": "Repli pour téléchargement non récupérable"

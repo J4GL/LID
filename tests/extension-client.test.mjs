@@ -83,6 +83,29 @@ test("EXT-CLI-001 client bootstraps token retries once and posts", async () => {
     },
   );
 
+  const rejected = new LidClient("http://192.168.1.29:8000", async (url) =>
+    url.endsWith("/api/bootstrap")
+      ? jsonResponse(200, { token: "t" })
+      : jsonResponse(409, {
+          results: [
+            {
+              name: "x.torrent",
+              ok: false,
+              error: "Torrent ou magnet invalide.",
+              error_code: "invalid_torrent",
+            },
+          ],
+        }),
+  );
+  await assert.rejects(
+    () => rejected.uploadTorrent(new Uint8Array(8), "x.torrent", "direct"),
+    (error) => {
+      assert.ok(error instanceof LidError);
+      assert.equal(error.code, "invalid_torrent");
+      return true;
+    },
+  );
+
   let fetched = 0;
   const guarded = new LidClient("http://192.168.1.29:8000", async () => {
     fetched += 1;
@@ -112,12 +135,17 @@ test("EXT-CLI-002 error codes map to FR and EN messages", () => {
     "invalid_torrent",
     "file_too_large",
     "server_unreachable",
+    "blob_unavailable",
+    "blob_no_tab",
+    "origin_revoked",
   ]) {
     const fr = messageFor(code, "fr");
     const en = messageFor(code, "en");
     assert.ok(fr.length > 0);
     assert.ok(en.length > 0);
     assert.notEqual(fr, en);
+    assert.notEqual(fr, messageFor("unexpected_response", "fr"));
+    assert.notEqual(en, messageFor("unexpected_response", "en"));
   }
   assert.equal(
     messageFor("nope", "fr"),
@@ -152,4 +180,25 @@ test("EXT-CLI-003 origin request failure reads as denied", async () => {
   };
   assert.equal(await ensureOrigin("https://tracker.example"), false);
   delete globalThis.chrome;
+});
+
+test("EXT-CLI-004 client calls fetch without detached receiver", async () => {
+  async function strictFetch(url) {
+    if (this !== undefined && this !== globalThis) {
+      throw new TypeError(
+        "Failed to execute 'fetch': Illegal invocation",
+      );
+    }
+    assert.ok(url.endsWith("/api/bootstrap"));
+    return jsonResponse(200, { token: "t", proxy_address: null });
+  }
+  const info = await new LidClient(
+    "http://192.168.1.29:8000",
+    strictFetch,
+  ).status();
+  assert.deepEqual(info, {
+    reachable: true,
+    proxyAddress: null,
+    setupRequired: false,
+  });
 });

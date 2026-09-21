@@ -30,3 +30,9 @@ Run the service installer specifications with:
 node --test tests/timeago.test.mjs
 node --test tests/extension-capture.test.mjs tests/extension-client.test.mjs tests/extension-worker.test.mjs
 ```
+
+For the extension blob regression tests (proxy uploads only):
+
+```sh
+node --test --test-name-pattern='EXT-CAP-|EXT-SW-(00[2346789]|010)|EXT-CLI-00[234]' tests/extension-capture.test.mjs tests/extension-client.test.mjs tests/extension-worker.test.mjs
+```

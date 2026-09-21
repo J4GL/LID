@@ -20,6 +20,11 @@ Test: unit · `tests/extension-client.test.mjs` · `EXT-CLI-001 client bootstrap
 - Given: un `fetch` mocké rendant `409 duplicate_torrent`
 - When: `uploadTorrent` est appelé
 - Then: une `LidError` avec `code === "duplicate_torrent"` est levée
+- Given: un `fetch` mocké rendant `409` avec `results[0]` en échec
+  (`error_code: "invalid_torrent"`, sans code global)
+- When: `uploadTorrent` est appelé
+- Then: une `LidError` avec `code === "invalid_torrent"` est levée
+  (erreur par fichier, pas générique)
 - Given: des octets de plus de 10 Mio
 - When: `uploadTorrent` est appelé
 - Then: aucun `fetch` n'a lieu et une `LidError` avec `code === "file_too_large"` est levée
@@ -32,7 +37,8 @@ de route et les notifications de `extension/background.js`.
 Test: unit · `tests/extension-client.test.mjs` · `EXT-CLI-002 error codes map to FR and EN messages`
 - Given: les codes `duplicate_torrent`, `proxy_unavailable`,
   `proxy_not_configured`, `invalid_torrent`, `file_too_large`,
-  `server_unreachable` et un code inconnu
+  `server_unreachable`, `blob_unavailable`, `blob_no_tab`,
+  `origin_revoked` et un code inconnu
 - When: `messageFor(code, "fr")` puis `messageFor(code, "en")` sont appelés
 - Then: chaque code connu rend un message non vide distinct par langue, et
   le code inconnu rend le message générique sans lever
@@ -48,3 +54,16 @@ Test: unit · `tests/extension-client.test.mjs` · `EXT-CLI-003 origin request f
 - When: `ensureOrigin` est appelé dans chaque cas
 - Then: il rend `true` sans appeler `request` dans le premier cas, et
   `false` dans les deux autres sans jamais lever
+
+## EXT-CLI-004 — Le client appelle fetch sans receveur détaché
+
+Implement: constructeur de `LidClient` dans `extension/lid.js`, qui enveloppe
+le `fetch` injecté au lieu de l'appeler en méthode.
+
+Test: unit · `tests/extension-client.test.mjs` · `EXT-CLI-004 client calls fetch without detached receiver`
+- Given: un `fetch` doublé qui rejette `Illegal invocation` quand son
+  receveur n'est ni `undefined` ni `globalThis` (sémantique navigateur),
+  et rend un token sinon
+- When: `new LidClient(url, strictFetch).status()` est appelé
+- Then: le statut est retourné sans `Illegal invocation`, ce qui échouerait
+  si le client appelait le fetch en méthode (`this.fetch`)

@@ -63,6 +63,14 @@
       "mode": { "content": "$2" }
     }
   },
+  "notif_added_local": {
+    "message": "$1 added through $2. You can delete the local file.",
+    "description": "Torrent added, browser file already landed",
+    "placeholders": {
+      "name": { "content": "$1" },
+      "mode": { "content": "$2" }
+    }
+  },
   "notif_blob": {
     "message": "This torrent cannot be captured automatically. Let it download, then drop the .torrent file into LID.",
     "description": "Unfetchable download fallback"

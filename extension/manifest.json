@@ -2,9 +2,9 @@
   "manifest_version": 3,
   "name": "__MSG_ext_name__",
   "description": "__MSG_ext_description__",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "default_locale": "en",
-  "permissions": ["downloads", "contextMenus", "storage", "notifications"],
+  "permissions": ["downloads", "contextMenus", "storage", "notifications", "scripting"],
   "host_permissions": ["http://192.168.1.29:8000/*"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
   "background": {

@@ -27,11 +27,21 @@ async function send(mode) {
       id,
     });
     if (!lookup?.ok) throw new Error("unexpected_response");
-    if (lookup.pending.kind === "file") {
+    if (lookup.pending.origin) {
       if (!(await ensureOrigin(lookup.pending.origin))) {
         setStatus(t("route_denied"), "error");
         setBusy(false);
         return;
+      }
+      // Install the blob hook for future downloads (best effort: the
+      // current send still tries a live read).
+      try {
+        await chrome.runtime.sendMessage({
+          type: "lid-register-hook",
+          origin: lookup.pending.origin,
+        });
+      } catch {
+        // Hook is best effort.
       }
     }
     setStatus(t("route_sending"));

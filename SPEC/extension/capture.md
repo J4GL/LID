@@ -6,7 +6,8 @@ Test: unit · `tests/extension-capture.test.mjs` · `EXT-CAP-000 manifest declar
 - Given: le fichier `extension/manifest.json`
 - When: il est parsé et inspecté
 - Then: `manifest_version` vaut 3, `permissions` contient exactement
-  `downloads`, `contextMenus`, `storage` et `notifications`, `host_permissions`
+  `downloads`, `contextMenus`, `storage`, `notifications` et `scripting`
+  (lecture des `blob:` dans le monde MAIN de la page), `host_permissions`
   ne couvre que le serveur LID configuré par défaut, et
   `optional_host_permissions` couvre `http`/`https` sans `host_permissions`
   large ni content scripts
@@ -41,3 +42,19 @@ Test: unit · `tests/extension-capture.test.mjs` · `EXT-CAP-002 classifies cont
 - When: `classifyLink` est appliqué, puis `trackerOrigin` sur le lien fichier
 - Then: les kinds valent `magnet`, `file`, `null` et `null`, et l'origine
   du tracker vaut `https://` + hôte (+ port non défaut)
+
+## EXT-CAP-003 — Le hook garde les octets après révocation de l'URL
+
+Implement: `extension/blob-hook.js`, enregistré par `registerBlobHook` dans
+`extension/background.js` à `document_start` en monde MAIN pour les sites
+autorisés, puis lu par `readBlobAsBase64`.
+Out of scope: injection réelle dans Chrome et contraintes CSP du navigateur ;
+le script réel est exécuté dans un contexte JavaScript isolé.
+
+Test: unit · `tests/extension-capture.test.mjs` · `EXT-CAP-003 blob hook retains bytes after object URL revocation`
+- Given: le script réel du hook chargé dans un contexte isolé, un Blob aux
+  octets connus et un `fetch` qui échoue à chaque appel
+- When: une URL est créée via `URL.createObjectURL`, puis révoquée via
+  `URL.revokeObjectURL`
+- Then: l'URL native ne résout plus de Blob, mais le Blob conservé par le
+  hook rend exactement les octets d'origine sans aucun appel à `fetch`

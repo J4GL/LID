@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 import test from "node:test";
+import { resolveObjectURL } from "node:buffer";
+import { runInNewContext } from "node:vm";
 
 import {
   classifyLink,
@@ -16,7 +18,7 @@ test("EXT-CAP-000 manifest declares narrow MV3 permissions", async () => {
   assert.equal(manifest.manifest_version, 3);
   assert.deepEqual(
     [...manifest.permissions].sort(),
-    ["contextMenus", "downloads", "notifications", "storage"],
+    ["contextMenus", "downloads", "notifications", "scripting", "storage"],
   );
   assert.deepEqual(manifest.host_permissions, [
     "http://192.168.1.29:8000/*",
@@ -78,4 +80,37 @@ test("EXT-CAP-002 classifies context menu links", () => {
     "https://tracker.example:8443",
   );
   assert.equal(trackerOrigin("http://tracker.example/x.torrent"), "http://tracker.example");
+});
+
+test("EXT-CAP-003 blob hook retains bytes after object URL revocation", async () => {
+  const source = await readFile(
+    new URL("../extension/blob-hook.js", import.meta.url),
+    "utf8",
+  );
+  let fetchCalls = 0;
+  const page = {
+    URL: {
+      createObjectURL: URL.createObjectURL.bind(URL),
+      revokeObjectURL: URL.revokeObjectURL.bind(URL),
+    },
+    fetch: () => {
+      fetchCalls++;
+      throw new Error("Page CSP forbids fetch");
+    },
+  };
+  page.window = page;
+  runInNewContext(source, page, { filename: "blob-hook.js" });
+  const bytes = new Uint8Array([0, 1, 127, 128, 254, 255]);
+  const url = page.URL.createObjectURL(new Blob([bytes]));
+  try {
+    assert.ok(resolveObjectURL(url));
+    page.URL.revokeObjectURL(url);
+    assert.equal(resolveObjectURL(url), undefined);
+    const retained = page.__lidBlobs.get(url);
+    assert.ok(retained instanceof Blob);
+    assert.deepEqual(new Uint8Array(await retained.arrayBuffer()), bytes);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    page.URL.revokeObjectURL(url);
+  }
 });
