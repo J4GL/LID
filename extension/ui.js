@@ -18,11 +18,15 @@ export function lang() {
   }
 }
 
-export async function ensureOrigin(origin) {
+// Resolves true when the origin is allowed; `onNewGrant` fires when this call
+// is the one that obtained the permission.
+export async function ensureOrigin(origin, onNewGrant) {
   const origins = [`${origin}/*`];
   try {
     if (await chrome.permissions.contains({ origins })) return true;
-    return (await chrome.permissions.request({ origins })) === true;
+    const granted = (await chrome.permissions.request({ origins })) === true;
+    if (granted && onNewGrant) onNewGrant();
+    return granted;
   } catch {
     return false;
   }

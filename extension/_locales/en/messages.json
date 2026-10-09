@@ -47,6 +47,9 @@
     "message": "Sending to LID…",
     "description": "Status while uploading"
   },
+  "route_enabled": {
+    "message": "Site enabled. Start the download again on the page: it will now be sent."
+  },
   "route_denied": {
     "message": "Access to this site was refused: download the .torrent and drop it into LID instead.",
     "description": "Origin permission refused"
@@ -86,6 +89,15 @@
   "options_server": {
     "message": "Server address",
     "description": "Server URL label"
+  },
+  "options_all_sites": {
+    "message": "Enable on all sites"
+  },
+  "options_all_sites_ok": {
+    "message": "Enabled on all sites: downloads are captured from the first click."
+  },
+  "options_all_sites_fail": {
+    "message": "Could not enable all sites."
   },
   "options_save": {
     "message": "Save",

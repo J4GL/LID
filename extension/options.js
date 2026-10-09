@@ -59,3 +59,27 @@ document.getElementById("test").onclick = async () => {
     );
   }
 };
+
+// One grant up front: the blob hook then exists before any page runs, so
+// even a site's first download is captured before the page revokes it.
+document.getElementById("all-sites").onclick = async () => {
+  try {
+    const granted = await chrome.permissions.request({
+      origins: ["http://*/*", "https://*/*"],
+    });
+    if (!granted) {
+      setStatus(t("route_denied"), "error");
+      return;
+    }
+    const result = await chrome.runtime.sendMessage({
+      type: "lid-register-hook",
+      origin: "*",
+    });
+    setStatus(
+      t(result?.ok ? "options_all_sites_ok" : "options_all_sites_fail"),
+      result?.ok ? "ok" : "error",
+    );
+  } catch {
+    setStatus(t("options_all_sites_fail"), "error");
+  }
+};

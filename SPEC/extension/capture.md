@@ -58,3 +58,61 @@ Test: unit · `tests/extension-capture.test.mjs` · `EXT-CAP-003 blob hook retai
   `URL.revokeObjectURL`
 - Then: l'URL native ne résout plus de Blob, mais le Blob conservé par le
   hook rend exactement les octets d'origine sans aucun appel à `fetch`
+
+## EXT-CAP-004 — Le hook mémorise l'ancrage du dernier clic
+
+Implement: `extension/blob-hook.js` (monde MAIN, `document_start`, enregistré
+par `hookMatches` dans `extension/background.js`) ; lu par `pickerBounds` pour
+placer la popup de route (EXT-SW-012).
+Out of scope: la conversion d'unités propre à Chrome (zoom de page), faite par
+le worker.
+
+Test: unit · `tests/extension-capture.test.mjs` · `EXT-CAP-004 blob hook records the last click anchor`
+- Given: le script réel du hook chargé dans un contexte isolé exposant
+  `addEventListener`, un `<a>` de rect `{left:40, right:120, bottom:60}`
+- When: un `pointerdown` (capture) arrive sur ce lien avec `screenX:540,
+  screenY:320, clientX:50, clientY:30`
+- Then: un écouteur `pointerdown` et un `contextmenu` sont enregistrés en
+  capture, et `__lidLastClick` vaut `{left:530, right:610, bottom:350}` avec
+  `at` égal à l'horloge de la page
+- Given: le même hook, un `<span>` dans un `<button>` de rect
+  `{left:10, right:90, bottom:44}`
+- When: un `contextmenu` arrive sur le `<span>` avec `screenX:300,
+  screenY:200, clientX:20, clientY:20`
+- Then: `__lidLastClick` vaut `{left:290, right:370, bottom:224}` (rect du
+  bouton, pas du `<span>`)
+- Given: un ancrage déjà mémorisé
+- When: un `pointerdown` clavier arrive (`screenX:0, clientX:0`)
+- Then: `__lidLastClick` reste inchangé
+
+## EXT-CAP-005 — Un clic sur un lien magnet est confié au worker au lieu du système
+
+Implement: `extension/magnet-hook.js` (monde ISOLATED, `document_start`),
+enregistré par `hookMatches` dans `extension/background.js` avec le hook blob
+et sur les mêmes sites ; il envoie `lid-magnet` au worker (EXT-SW-013).
+Out of scope: les magnets ouverts par script (`location = "magnet:…"`,
+`window.open`) et les sites non autorisés, qui restent au gestionnaire du
+système ; le menu contextuel (EXT-CAP-002) couvre ces cas.
+
+Test: unit · `tests/extension-capture.test.mjs` · `EXT-CAP-005 magnet hook hands magnet clicks to the worker`
+- Given: le script réel chargé dans un contexte isolé exposant
+  `addEventListener` et `chrome.runtime.sendMessage`, et un
+  `<a href="magnet:?xt=urn:btih:abc&dn=Ubuntu">` contenant un `<span>`
+- When: un `click` de confiance (`isTrusted`, `button:0`) arrive sur le `<span>`
+- Then: un seul écouteur `click` est enregistré, en capture ;
+  `preventDefault` est appelé et `sendMessage` reçoit exactement
+  `{type:"lid-magnet", magnet:"magnet:?xt=urn:btih:abc&dn=Ubuntu"}`
+- Given: le même lien
+- When: un `click` non fiable (`isTrusted:false`, clic simulé par la page)
+  arrive, puis un `click` déjà `defaultPrevented`, puis un `click` de bouton
+  milieu, puis un `click` sur un lien `https://…`
+- Then: ni `preventDefault` ni `sendMessage` pour aucun d'eux
+- Given: le script exécuté une seconde fois dans le même contexte
+  (réinjection dans un onglet ouvert)
+- When: un `click` de confiance arrive sur le lien magnet
+- Then: toujours un seul écouteur et un seul `sendMessage`
+- Given: `chrome.runtime.sendMessage` lève (extension rechargée, contexte
+  invalidé)
+- When: un `click` de confiance arrive sur le lien magnet
+- Then: aucune exception ne remonte et `preventDefault` n'est pas appelé
+  (le système ouvre le magnet comme sans extension)

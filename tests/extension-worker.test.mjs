@@ -540,6 +540,30 @@ test("EXT-SW-005 worker reports revoked origin on blob send", async () => {
   assert.equal(hidden.code, "blob_no_tab");
 });
 
+function assertMagnetHook(scripts, matches) {
+  assert.deepEqual(
+    scripts.map((script) => script.id),
+    ["lid-blob-hook", "lid-magnet-hook"],
+  );
+  const magnet = scripts[1];
+  assert.deepEqual(magnet.js, ["magnet-hook.js"]);
+  assert.equal(magnet.world, "ISOLATED");
+  assert.equal(magnet.runAt, "document_start");
+  assert.deepEqual(magnet.matches, matches);
+}
+
+function assertHookInjections(injections, tabId) {
+  assert.deepEqual(
+    injections
+      .filter((entry) => entry.files)
+      .map((entry) => [entry.files, entry.world, entry.target.tabId]),
+    [
+      [["blob-hook.js"], "MAIN", tabId],
+      [["magnet-hook.js"], "ISOLATED", tabId],
+    ],
+  );
+}
+
 test("EXT-SW-006 worker stashes page blobs past CSP and revoke", async () => {
   const { chrome, calls, listeners } = makeChrome();
   let registered = [];
@@ -548,14 +572,18 @@ test("EXT-SW-006 worker stashes page blobs past CSP and revoke", async () => {
     calls.tabQueries.push(query);
     return [{ id: 77, url: "https://site.example/t" }];
   };
-  chrome.scripting.getRegisteredContentScripts = async () => registered;
+  chrome.scripting.getRegisteredContentScripts = async ({ ids } = {}) =>
+    registered.filter((script) => !ids || ids.includes(script.id));
   chrome.scripting.registerContentScripts = async (scripts) => {
     calls.registrations.push(scripts);
-    registered = scripts;
+    registered = [...registered, ...scripts];
   };
   chrome.scripting.updateContentScripts = async (scripts) => {
     calls.updates.push(scripts);
-    registered = [{ ...registered[0], matches: scripts[0].matches }];
+    registered = registered.map((script) => ({
+      ...script,
+      ...scripts.find((update) => update.id === script.id),
+    }));
   };
   globalThis.chrome = chrome;
   globalThis.fetch = async () => {
@@ -577,10 +605,8 @@ test("EXT-SW-006 worker stashes page blobs past CSP and revoke", async () => {
   assert.deepEqual(script.matches, ["https://site.example/*"]);
   assert.equal(script.world, "MAIN");
   assert.equal(script.runAt, "document_start");
-  const hookInjection = calls.injections.find((entry) => entry.files);
-  assert.deepEqual(hookInjection.files, ["blob-hook.js"]);
-  assert.equal(hookInjection.world, "MAIN");
-  assert.equal(hookInjection.target.tabId, 77);
+  assertMagnetHook(calls.registrations[0], ["https://site.example/*"]);
+  assertHookInjections(calls.injections, 77);
 
   const second = await ask({
     type: "lid-register-hook",
@@ -589,10 +615,13 @@ test("EXT-SW-006 worker stashes page blobs past CSP and revoke", async () => {
   assert.equal(second.ok, true);
   assert.equal(calls.registrations.length, 1);
   assert.equal(calls.updates.length, 1);
-  assert.deepEqual(calls.updates[0][0].matches, [
-    "https://site.example/*",
-    "https://other.example/*",
-  ]);
+  assert.deepEqual(
+    calls.updates[0].map((update) => [update.id, update.matches]),
+    ["lid-blob-hook", "lid-magnet-hook"].map((id) => [
+      id,
+      ["https://site.example/*", "https://other.example/*"],
+    ]),
+  );
 
   assert.match(messageFor("blob_unavailable", "fr"), /Relancez/);
   assert.match(messageFor("blob_unavailable", "en"), /again/);
@@ -1009,4 +1038,269 @@ test("EXT-SW-010 worker observes late filenames without suggesting after cancell
   await h.assertUploads(1);
   assert.equal(session.has(id), false);
   assert.equal(h.successes().length, 1);
+});
+
+async function hookSyncHarness(key, granted, previous = []) {
+  const { chrome, calls, listeners } = makeChrome();
+  let registered = previous;
+  chrome.runtime.onStartup = { addListener: (fn) => (listeners.startup = fn) };
+  chrome.runtime.getManifest = () => ({
+    host_permissions: ["http://192.168.1.29:8000/*"],
+  });
+  chrome.permissions = {
+    contains: async () => true,
+    getAll: async () => ({ origins: granted }),
+    onAdded: { addListener: (fn) => (listeners.permissionAdded = fn) },
+  };
+  chrome.tabs.query = async (query) => {
+    calls.tabQueries.push(query);
+    return [{ id: 88, url: "https://site.example/t" }];
+  };
+  chrome.scripting.getRegisteredContentScripts = async ({ ids } = {}) =>
+    registered.filter((script) => !ids || ids.includes(script.id));
+  chrome.scripting.registerContentScripts = async (scripts) => {
+    calls.registrations.push(scripts);
+    registered = [...registered, ...scripts];
+  };
+  chrome.scripting.updateContentScripts = async (scripts) => {
+    calls.updates.push(scripts);
+    registered = registered.map((script) => ({
+      ...script,
+      ...scripts.find((update) => update.id === script.id),
+    }));
+  };
+  globalThis.chrome = chrome;
+  await import(`../extension/background.js?sw11-${key}`);
+  return { calls, listeners, registered: () => registered };
+}
+
+test("EXT-SW-011 worker hooks every granted origin at startup", async (t) => {
+  await t.test("granted origins are hooked on update, startup and grant", async () => {
+    const { calls, listeners, registered } = await hookSyncHarness("granted", [
+      "http://192.168.1.29:8000/*",
+      "https://site.example/*",
+      "https://other.example/*",
+    ]);
+    listeners.installed({ reason: "update" });
+    await flush();
+    assert.equal(calls.registrations.length, 1);
+    const [script] = calls.registrations[0];
+    assert.equal(script.id, "lid-blob-hook");
+    assert.deepEqual(script.js, ["blob-hook.js"]);
+    assert.equal(script.world, "MAIN");
+    assert.equal(script.runAt, "document_start");
+    assert.deepEqual(script.matches, [
+      "https://site.example/*",
+      "https://other.example/*",
+    ]);
+    assertMagnetHook(calls.registrations[0], [
+      "https://site.example/*",
+      "https://other.example/*",
+    ]);
+    assertHookInjections(calls.injections, 88);
+
+    listeners.startup();
+    await flush();
+    assert.equal(calls.registrations.length, 1);
+    assert.deepEqual(registered()[0].matches, [
+      "https://site.example/*",
+      "https://other.example/*",
+    ]);
+
+    listeners.permissionAdded({ origins: ["https://new.example/*"] });
+    await flush();
+    assert.deepEqual(
+      calls.updates.at(-1).map((update) => [update.id, update.matches]),
+      ["lid-blob-hook", "lid-magnet-hook"].map((id) => [
+        id,
+        ["https://site.example/*", "https://other.example/*", "https://new.example/*"],
+      ]),
+    );
+  });
+
+  await t.test("only the LID server granted hooks nothing", async () => {
+    const { calls, listeners } = await hookSyncHarness("server-only", [
+      "http://192.168.1.29:8000/*",
+    ]);
+    listeners.startup();
+    await flush();
+    assert.equal(calls.registrations.length, 0);
+    assert.equal(calls.updates.length, 0);
+    assert.equal(calls.injections.length, 0);
+  });
+
+  await t.test("an update adds the magnet hook beside an older blob hook", async () => {
+    const { calls, listeners } = await hookSyncHarness(
+      "upgrade",
+      ["https://site.example/*", "https://other.example/*"],
+      [
+        {
+          id: "lid-blob-hook",
+          js: ["blob-hook.js"],
+          matches: ["https://site.example/*"],
+          world: "MAIN",
+          runAt: "document_start",
+        },
+      ],
+    );
+    listeners.installed({ reason: "update" });
+    await flush();
+    const both = ["https://site.example/*", "https://other.example/*"];
+    assert.deepEqual(
+      calls.updates.map((batch) => batch.map((update) => [update.id, update.matches])),
+      [[["lid-blob-hook", both]]],
+    );
+    assert.equal(calls.registrations.length, 1);
+    assert.deepEqual(
+      calls.registrations[0].map((script) => [script.id, script.world, script.matches]),
+      [["lid-magnet-hook", "ISOLATED", both]],
+    );
+  });
+});
+
+async function placementHarness(key, { anchor, zoom = 1, inject = "ok", focused = "ok" }) {
+  const { chrome, calls, listeners, session } = makeChrome();
+  const placements = [];
+  chrome.windows.getLastFocused = async (options) => {
+    if (focused !== "ok") throw new Error("no window");
+    assert.deepEqual(options, { populate: true });
+    return {
+      id: 3,
+      left: 100,
+      top: 50,
+      width: 1200,
+      height: 800,
+      tabs: [
+        { id: 6, active: false },
+        { id: 7, active: true },
+      ],
+    };
+  };
+  chrome.tabs.getZoom = async () => zoom;
+  chrome.scripting.executeScript = async (injection) => {
+    calls.injections.push(injection);
+    if (injection.func?.name !== "readLastClick") return [{ result: "" }];
+    placements.push(injection);
+    if (inject !== "ok") throw new Error("Cannot access contents of the page");
+    return [{ result: anchor }];
+  };
+  globalThis.chrome = chrome;
+  await import(`../extension/background.js?sw12-${key}`);
+  return { calls, listeners, placements, session };
+}
+
+const torrentDownload = {
+  id: 70,
+  filename: "x.torrent",
+  mime: "application/x-bittorrent",
+  url: "https://tracker.example/x.torrent",
+  finalUrl: "https://tracker.example/x.torrent",
+};
+
+test("EXT-SW-012 worker places the route picker under the clicked element", async (t) => {
+  const fresh = () => ({ left: 400, right: 480, bottom: 220, at: Date.now() });
+  const cases = [
+    { name: "fresh anchor at zoom 1", anchor: fresh(), left: 250, top: 224 },
+    { name: "fresh anchor at zoom 1.25", anchor: fresh(), zoom: 1.25, left: 360, top: 279 },
+    {
+      name: "anchor near the bottom-right edge is clamped",
+      anchor: { left: 1240, right: 1290, bottom: 780, at: Date.now() },
+      left: 920,
+      top: 550,
+    },
+    {
+      name: "stale anchor centers on the window",
+      anchor: { left: 400, right: 480, bottom: 220, at: Date.now() - 11000 },
+      left: 510,
+      top: 300,
+    },
+    { name: "refused injection centers on the window", inject: "fail", left: 510, top: 300 },
+  ];
+  for (const [index, entry] of cases.entries()) {
+    await t.test(entry.name, async () => {
+      const h = await placementHarness(`case${index}`, entry);
+      await h.listeners.download({ ...torrentDownload });
+      await flush();
+      assert.equal(h.placements.length, 1);
+      assert.equal(h.placements[0].target.tabId, 7);
+      assert.equal(h.placements[0].world, "MAIN");
+      assert.equal(h.calls.windows.length, 1);
+      assert.equal(h.calls.windows[0].left, entry.left);
+      assert.equal(h.calls.windows[0].top, entry.top);
+    });
+  }
+
+  await t.test("context menu uses the clicked tab", async () => {
+    const h = await placementHarness("menu", { anchor: fresh() });
+    await h.listeners.menu(
+      { menuItemId: "lid-send", linkUrl: "magnet:?xt=urn:btih:abc&dn=Show" },
+      { id: 42, windowId: 3 },
+    );
+    await flush();
+    assert.equal(h.placements.length, 1);
+    assert.equal(h.placements[0].target.tabId, 42);
+    assert.equal(h.calls.windows[0].left, 250);
+    assert.equal(h.calls.windows[0].top, 224);
+  });
+
+  await t.test("no focused window keeps the default placement", async () => {
+    const h = await placementHarness("nowindow", { anchor: fresh(), focused: "fail" });
+    await h.listeners.download({ ...torrentDownload });
+    await flush();
+    assert.equal(h.placements.length, 0);
+    assert.equal(h.calls.windows.length, 1);
+    assert.equal("left" in h.calls.windows[0], false);
+    assert.equal("top" in h.calls.windows[0], false);
+  });
+});
+
+test("EXT-SW-013 worker opens the route picker for a clicked magnet", async () => {
+  const MAGNET = "magnet:?xt=urn:btih:abc&dn=Ubuntu+24.04";
+  const h = await placementHarness("sw13", {
+    anchor: { left: 400, right: 480, bottom: 220, at: Date.now() },
+  });
+  const posted = [];
+  globalThis.fetch = async (url, options = {}) => {
+    if (url.endsWith("/api/bootstrap")) {
+      return { ok: true, status: 200, json: async () => ({ token: "t" }) };
+    }
+    posted.push({ url, body: JSON.parse(options.body) });
+    return { ok: true, status: 201, json: async () => ({ id: "a".repeat(40) }) };
+  };
+  const ask = (message, sender) =>
+    new Promise((resolve) => h.listeners.message(message, sender, resolve));
+
+  const reply = await ask({ type: "lid-magnet", magnet: MAGNET }, { tab: { id: 42 } });
+  assert.deepEqual(reply, { ok: true });
+  assert.equal(h.session.size, 1);
+  const [[id, pending]] = [...h.session.entries()];
+  assert.deepEqual(
+    { kind: pending.kind, magnet: pending.magnet, name: pending.name },
+    { kind: "magnet", magnet: MAGNET, name: "Ubuntu 24.04" },
+  );
+  assert.equal(h.placements.length, 1);
+  assert.equal(h.placements[0].target.tabId, 42);
+  assert.equal(h.calls.windows.length, 1);
+  assert.equal(h.calls.windows[0].url, `chrome-extension://test/route.html?id=${id}`);
+  assert.equal(h.calls.windows[0].left, 250);
+  assert.equal(h.calls.windows[0].top, 224);
+
+  const sent = await ask({ type: "lid-send", id, mode: "direct" }, {});
+  assert.equal(sent.ok, true);
+  assert.equal(posted.length, 1);
+  assert.match(posted[0].url, /\/api\/torrents\/magnet$/);
+  assert.deepEqual(posted[0].body, { mode: "direct", magnet: MAGNET });
+  assert.equal(h.session.size, 0);
+
+  for (const [message, sender] of [
+    [{ type: "lid-magnet", magnet: "https://site.example/x" }, { tab: { id: 42 } }],
+    [{ type: "lid-magnet", magnet: MAGNET }, {}],
+  ]) {
+    assert.deepEqual(await ask(message, sender), {
+      ok: false,
+      code: "unexpected_response",
+    });
+  }
+  assert.equal(h.session.size, 0);
+  assert.equal(h.calls.windows.length, 1);
 });

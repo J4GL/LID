@@ -138,20 +138,23 @@ message `lid-register-hook` envoyé par `extension/route.js` après octroi
 d'origine) ; `readBlobAsBase64` lit le stash d'abord (`Blob.arrayBuffer`,
 hors CSP et insensible à la révocation), `fetch` en repli. Le message
 `blob_unavailable` conseille de relancer le téléchargement sur la page.
-Out of scope: le premier blob créé avant l'enregistrement du hook (perdu ;
-nouvel essai sur la page).
+Out of scope: le premier blob d'une origine nouvellement accordée dans la
+popup, créé avant l'enregistrement du hook (perdu ; nouvel essai sur la page).
+Les origines déjà autorisées sont couvertes par EXT-SW-011.
 
 Test: unit · `tests/extension-worker.test.mjs` · `EXT-SW-006 worker stashes page blobs past CSP and revoke`
 - Given: une origine autorisée sans script enregistré, avec un onglet ouvert
 - When: `lid-register-hook` tourne
-- Then: `registerContentScripts` est appelé (id `lid-blob-hook`, monde
-  MAIN, `document_start`, `blob-hook.js`), et l'onglet ouvert reçoit le
-  hook par `executeScript` avec `files`
+- Then: `registerContentScripts` est appelé une fois avec `lid-blob-hook`
+  (monde MAIN, `document_start`, `blob-hook.js`) puis `lid-magnet-hook`
+  (monde ISOLATED, `document_start`, `magnet-hook.js`, EXT-CAP-005), aux mêmes
+  motifs, et l'onglet ouvert reçoit `blob-hook.js` (MAIN) puis
+  `magnet-hook.js` (ISOLATED) par `executeScript` avec `files`
 - Given: un hook enregistré pour une origine, puis `lid-register-hook`
   pour une seconde origine
 - When: le message tourne
-- Then: `updateContentScripts` fusionne les deux motifs, sans second
-  appel à `registerContentScripts`
+- Then: `updateContentScripts` fusionne les deux motifs pour les deux
+  scripts, sans second appel à `registerContentScripts`
 - Given: la fonction injectée capturée et un stash contenant le Blob
 - When: elle tourne avec l'URL du blob (`fetch` saboté)
 - Then: elle résout le base64 exact des octets, sans appeler `fetch`
@@ -268,3 +271,105 @@ Test: unit · `tests/extension-worker.test.mjs` · `EXT-SW-010 worker observes l
 - When: `lid-send` reçoit `mode=proxy`
 - Then: l'envoi réussit une seule fois avec les octets capturés et le nom
   actualisé, l'attente est supprimée et une notification de succès est créée
+
+## EXT-SW-011 — Le hook blob couvre toutes les origines déjà autorisées dès le démarrage
+
+Implement: `syncBlobHook` dans `extension/background.js`, appelé par
+`runtime.onInstalled` (installation, mise à jour, rechargement),
+`runtime.onStartup` et `permissions.onAdded` (octroi depuis la popup de route
+ou `chrome://extensions`).
+Uses: [EXT-SW-006](#ext-sw-006--les-blobs-sont-conservés-via-un-hook-précoce-insensible-au-csp)
+Out of scope: une origine jamais accordée (aucun hook possible avant l'octroi).
+
+Test: unit · `tests/extension-worker.test.mjs` · `EXT-SW-011 worker hooks every granted origin at startup`
+- Given: `permissions.getAll` rend le serveur LID (permission d'hôte du
+  manifeste), `https://site.example/*` et `https://other.example/*`, aucun
+  script enregistré, et un onglet ouvert sur `https://site.example/t`
+- When: `runtime.onInstalled` tourne avec `reason: "update"`
+- Then: `registerContentScripts` est appelé une fois avec `lid-blob-hook`
+  (monde MAIN, `document_start`, `blob-hook.js`) et `lid-magnet-hook` (monde
+  ISOLATED, `magnet-hook.js`), chacun avec exactement `https://site.example/*`
+  et `https://other.example/*`, sans le serveur LID, et l'onglet ouvert reçoit
+  `blob-hook.js` puis `magnet-hook.js` par `executeScript` avec `files`
+- When: `runtime.onStartup` tourne ensuite
+- Then: aucun second `registerContentScripts` ; les motifs enregistrés restent
+  exactement les deux origines, sans doublon
+- When: `permissions.onAdded` signale `https://new.example/*`
+- Then: `updateContentScripts` enregistre les deux origines plus
+  `https://new.example/*`, pour les deux scripts
+- Given: `permissions.getAll` ne rend que le serveur LID
+- When: `runtime.onStartup` tourne
+- Then: aucun enregistrement, mise à jour ni injection n'a lieu
+- Given: une version précédente a laissé `lid-blob-hook` seul, enregistré
+  pour `https://site.example/*`, et `permissions.getAll` rend
+  `https://site.example/*` et `https://other.example/*`
+- When: `runtime.onInstalled` tourne avec `reason: "update"`
+- Then: `updateContentScripts` met `lid-blob-hook` sur les deux origines et
+  `registerContentScripts` crée `lid-magnet-hook` sur ces deux mêmes origines
+
+## EXT-SW-012 — La popup de route s'ouvre sous l'élément cliqué, sinon au centre de la fenêtre
+
+Implement: `openRoutePicker` / `pickerBounds` dans `extension/background.js`,
+appelés par `interceptDownload` (onglet actif de la fenêtre au premier plan),
+`handleMenuClick` (onglet transmis par `contextMenus.onClicked`) et le message
+`lid-magnet` (onglet émetteur, EXT-SW-013).
+Uses: [EXT-CAP-004](capture.md#ext-cap-004--le-hook-mémorise-lancrage-du-dernier-clic)
+Out of scope: le rendu réel de la fenêtre par Chrome (validation manuelle).
+
+Test: unit · `tests/extension-worker.test.mjs` · `EXT-SW-012 worker places the route picker under the clicked element`
+
+Chaque cas part d'une fenêtre au premier plan `{left:100, top:50, width:1200,
+height:800}` dont l'onglet actif est 7, et d'un téléchargement `.torrent`
+http intercepté ; la popup mesure 380×300.
+- Given: un ancrage `{left:400, right:480, bottom:220}` daté de maintenant,
+  zoom 1
+- When: la popup de route s'ouvre
+- Then: `executeScript` vise l'onglet 7 en monde MAIN et `windows.create`
+  reçoit `left:250, top:224`
+- Given: le même ancrage, zoom 1.25
+- When: la popup de route s'ouvre
+- Then: `windows.create` reçoit `left:360, top:279`
+- Given: un ancrage `{left:1240, right:1290, bottom:780}`, zoom 1
+- When: la popup de route s'ouvre
+- Then: `windows.create` reçoit `left:920, top:550` (bornée dans la fenêtre)
+- Given: un ancrage daté de 11 s
+- When: la popup de route s'ouvre
+- Then: `windows.create` reçoit `left:510, top:300` (centre de la fenêtre)
+- Given: `executeScript` rejette (site non autorisé)
+- When: la popup de route s'ouvre
+- Then: `windows.create` reçoit `left:510, top:300`
+- Given: un clic menu sur un lien magnet depuis l'onglet 42, ancrage
+  `{left:400, right:480, bottom:220}` récent, zoom 1
+- When: la popup de route s'ouvre
+- Then: `executeScript` vise l'onglet 42 et `windows.create` reçoit
+  `left:250, top:224`
+- Given: `windows.getLastFocused` rejette
+- When: la popup de route s'ouvre
+- Then: `windows.create` est appelé sans `left` ni `top`, sans injection
+
+## EXT-SW-013 — Un magnet cliqué dans la page ouvre la popup de route
+
+Implement: le message `lid-magnet` dans `handleMessage` de
+`extension/background.js`, envoyé par `extension/magnet-hook.js`
+(EXT-CAP-005) ; même attente `magnet` que `handleMenuClick`, popup placée par
+`pickerBounds` sur l'onglet émetteur (EXT-SW-012).
+Uses: [EXT-CAP-005](capture.md#ext-cap-005--un-clic-sur-un-lien-magnet-est-confié-au-worker-au-lieu-du-système),
+[EXT-SW-012](#ext-sw-012--la-popup-de-route-souvre-sous-lélément-cliqué-sinon-au-centre-de-la-fenêtre)
+
+Test: unit · `tests/extension-worker.test.mjs` · `EXT-SW-013 worker opens the route picker for a clicked magnet`
+- Given: une fenêtre au premier plan `{left:100, top:50, width:1200,
+  height:800}`, un ancrage `{left:400, right:480, bottom:220}` récent, zoom 1
+- When: `lid-magnet` arrive avec
+  `magnet:?xt=urn:btih:abc&dn=Ubuntu+24.04` depuis l'onglet 42
+- Then: la réponse vaut `{ok:true}` ; la session contient une seule attente
+  `{kind:"magnet", magnet:<le lien>, name:"Ubuntu 24.04"}` ; `executeScript`
+  vise l'onglet 42 et `windows.create` ouvre `route.html?id=<cette attente>`
+  en `left:250, top:224`
+- When: `lid-send` arrive pour cette attente avec le mode `direct`
+- Then: `POST /api/torrents/magnet` reçoit `{mode:"direct", magnet:<le lien>}`
+  et l'attente est retirée de la session
+- Given: un `lid-magnet` dont le lien vaut `https://site.example/x`, puis un
+  `lid-magnet` valide sans onglet émetteur
+- When: chacun arrive
+- Then: chacun répond `{ok:false, code:"unexpected_response"}`, sans attente
+  en session ni fenêtre ouverte

@@ -38,12 +38,75 @@ function pendingId() {
   return `p${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
 }
 
-async function openRoutePicker(id) {
+const PICKER_WIDTH = 380;
+const PICKER_HEIGHT = 300;
+const CLICK_MAX_AGE_MS = 10000;
+
+// Self-contained: runs in the page (MAIN world), where blob-hook.js records
+// the last clicked element's anchor.
+function readLastClick() {
+  return globalThis.__lidLastClick || null;
+}
+
+function freshAnchor(anchor) {
+  if (!anchor) return null;
+  const { left, right, bottom, at } = anchor;
+  if (![left, right, bottom, at].every(Number.isFinite)) return null;
+  return Date.now() - at <= CLICK_MAX_AGE_MS ? anchor : null;
+}
+
+function clamp(value, min, max) {
+  return Math.round(Math.min(Math.max(value, min), Math.max(min, max)));
+}
+
+// Under the clicked element when the page hook saw the click, otherwise
+// centered on the focused browser window. Empty when no window is known.
+async function pickerBounds(tab) {
+  let win;
+  try {
+    win = await chrome.windows.getLastFocused({ populate: true });
+  } catch {
+    return {};
+  }
+  if (!win) return {};
+  const tabId = tab?.id ?? win.tabs?.find((candidate) => candidate.active)?.id;
+  let left = win.left + (win.width - PICKER_WIDTH) / 2;
+  let top = win.top + (win.height - PICKER_HEIGHT) / 2;
+  if (tabId !== undefined) {
+    try {
+      const [injection] = await chrome.scripting.executeScript({
+        target: { tabId },
+        world: "MAIN",
+        func: readLastClick,
+      });
+      const anchor = freshAnchor(injection?.result);
+      if (anchor) {
+        let zoom = 1;
+        try {
+          zoom = (await chrome.tabs.getZoom(tabId)) || 1;
+        } catch {
+          // Unknown zoom: assume 100 %.
+        }
+        left = ((anchor.left + anchor.right) / 2) * zoom - PICKER_WIDTH / 2;
+        top = anchor.bottom * zoom + 4;
+      }
+    } catch {
+      // Site not granted or tab gone: keep the window center.
+    }
+  }
+  return {
+    left: clamp(left, win.left, win.left + win.width - PICKER_WIDTH),
+    top: clamp(top, win.top, win.top + win.height - PICKER_HEIGHT),
+  };
+}
+
+async function openRoutePicker(id, tab) {
   await chrome.windows.create({
     url: chrome.runtime.getURL(`route.html?id=${id}`),
     type: "popup",
-    width: 380,
-    height: 300,
+    width: PICKER_WIDTH,
+    height: PICKER_HEIGHT,
+    ...(await pickerBounds(tab)),
   });
 }
 
@@ -324,51 +387,97 @@ async function cacheBlobEarly(id, pending) {
   }
 }
 
-async function registerBlobHook(origin) {
-  const match = `${origin}/*`;
+const ALL_SITES = ["http://*/*", "https://*/*"];
+
+// `origin` "*" hooks every http(s) page, so the very first download of a
+// site is already retained (no per-site grant race).
+function registerBlobHook(origin) {
+  return hookMatches(origin === "*" ? ALL_SITES : [`${origin}/*`]);
+}
+
+// Page scripts sharing the granted sites: the blob hook (EXT-SW-006) and the
+// magnet click hook (EXT-CAP-005), which needs chrome.runtime, absent from MAIN.
+const PAGE_SCRIPTS = [
+  { id: "lid-blob-hook", js: ["blob-hook.js"], world: "MAIN" },
+  { id: "lid-magnet-hook", js: ["magnet-hook.js"], world: "ISOLATED" },
+];
+
+async function hookMatches(matches_) {
   try {
     const existing = await chrome.scripting.getRegisteredContentScripts({
-      ids: ["lid-blob-hook"],
+      ids: PAGE_SCRIPTS.map((script) => script.id),
     });
-    if (existing.length > 0) {
-      const matches = [...new Set([...(existing[0].matches || []), match])];
-      await chrome.scripting.updateContentScripts([
-        { id: "lid-blob-hook", matches },
-      ]);
-    } else {
-      await chrome.scripting.registerContentScripts([
-        {
-          id: "lid-blob-hook",
-          js: ["blob-hook.js"],
-          matches: [match],
-          world: "MAIN",
-          runAt: "document_start",
-          persistAcrossSessions: true,
-        },
-      ]);
-    }
+    // One set of sites for every script: an update may find only the older
+    // blob hook, whose sites the new magnet hook must inherit.
+    const matches = [
+      ...new Set([
+        ...existing.flatMap((script) => script.matches || []),
+        ...matches_,
+      ]),
+    ];
+    const known = new Set(existing.map((script) => script.id));
+    const updates = PAGE_SCRIPTS.filter((script) => known.has(script.id)).map(
+      ({ id }) => ({ id, matches }),
+    );
+    const fresh = PAGE_SCRIPTS.filter((script) => !known.has(script.id)).map(
+      (script) => ({
+        ...script,
+        matches,
+        runAt: "document_start",
+        persistAcrossSessions: true,
+      }),
+    );
+    if (updates.length) await chrome.scripting.updateContentScripts(updates);
+    if (fresh.length) await chrome.scripting.registerContentScripts(fresh);
   } catch (error) {
     console.warn("LID hook registration failed", error);
     return { ok: false };
   }
   // Hook pages that are already open so no reload is needed.
   try {
-    const tabs = await chrome.tabs.query({ url: [match] });
+    const tabs = await chrome.tabs.query({ url: matches_ });
     for (const tab of tabs) {
-      try {
-        await chrome.scripting.executeScript({
-          target: { tabId: tab.id },
-          world: "MAIN",
-          files: ["blob-hook.js"],
-        });
-      } catch {
-        // Closed or unreachable tab: skip it.
+      for (const { js, world } of PAGE_SCRIPTS) {
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            world,
+            files: js,
+          });
+        } catch {
+          // Closed or unreachable tab: skip it.
+        }
       }
     }
   } catch {
     // Registration stands; future page loads get the hook.
   }
   return { ok: true };
+}
+
+// Granted page origins, without the manifest's own hosts (the LID server).
+function pageOrigins(origins) {
+  let own = [];
+  try {
+    own = chrome.runtime.getManifest?.().host_permissions || [];
+  } catch {
+    // No manifest (tests): keep every origin.
+  }
+  return (origins || []).filter((origin) => !own.includes(origin));
+}
+
+// The hook must exist before a page creates its blob: registering it only at
+// send time lost the first download of every already-granted site (grant made
+// before the hook existed, script dropped on extension reload/update, or
+// toggled in chrome://extensions).
+async function syncBlobHook() {
+  try {
+    const all = await chrome.permissions?.getAll?.();
+    const matches = pageOrigins(all?.origins);
+    if (matches.length) await hookMatches(matches);
+  } catch (error) {
+    console.warn("LID hook sync failed", error);
+  }
 }
 
 async function sendBlob(id, pending, client, mode) {
@@ -401,7 +510,7 @@ async function sendBlob(id, pending, client, mode) {
   return { ...result, localFile };
 }
 
-async function handleMenuClick(info) {
+async function handleMenuClick(info, tab) {
   if (info.menuItemId !== MENU_ID) return;
   const kind = classifyLink(info.linkUrl);
   if (!kind) {
@@ -411,21 +520,30 @@ async function handleMenuClick(info) {
     );
     return;
   }
-  const id = pendingId();
   const link = info.linkUrl.trim();
+  if (kind === "magnet") {
+    await queueMagnet(link, tab);
+    return;
+  }
+  const id = pendingId();
   await chrome.storage.session.set({
-    [id]:
-      kind === "magnet"
-        ? { kind, magnet: link, name: magnetName(link), created: Date.now() }
-        : {
-            kind,
-            url: link,
-            origin: trackerOrigin(link),
-            name: basename(new URL(link).pathname),
-            created: Date.now(),
-          },
+    [id]: {
+      kind,
+      url: link,
+      origin: trackerOrigin(link),
+      name: basename(new URL(link).pathname),
+      created: Date.now(),
+    },
   });
-  await openRoutePicker(id);
+  await openRoutePicker(id, tab);
+}
+
+async function queueMagnet(magnet, tab) {
+  const id = pendingId();
+  await chrome.storage.session.set({
+    [id]: { kind: "magnet", magnet, name: magnetName(magnet), created: Date.now() },
+  });
+  await openRoutePicker(id, tab);
 }
 
 async function handleSend(id, mode) {
@@ -466,7 +584,7 @@ async function handleSend(id, mode) {
   }
 }
 
-async function handleMessage(message) {
+async function handleMessage(message, sender) {
   if (message?.type === "lid-get-pending") {
     const store = await chrome.storage.session.get(message.id);
     return store[message.id]
@@ -475,6 +593,15 @@ async function handleMessage(message) {
   }
   if (message?.type === "lid-send") {
     return handleSend(message.id, message.mode);
+  }
+  if (message?.type === "lid-magnet") {
+    // From magnet-hook.js: a page click, placed under the link in its tab.
+    const tab = sender?.tab;
+    if (tab?.id === undefined || classifyLink(message.magnet) !== "magnet") {
+      return { ok: false, code: "unexpected_response" };
+    }
+    await queueMagnet(message.magnet.trim(), tab);
+    return { ok: true };
   }
   if (message?.type === "lid-register-hook") {
     if (typeof message.origin !== "string" || !message.origin) {
@@ -495,12 +622,23 @@ async function handleMessage(message) {
   return { ok: false, code: "unexpected_response" };
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details?.reason === "install") chrome.runtime.openOptionsPage?.();
   chrome.contextMenus.create({
     id: MENU_ID,
     title: chrome.i18n.getMessage("menu_send"),
     contexts: ["link"],
   });
+  syncBlobHook();
+});
+
+chrome.runtime.onStartup?.addListener(() => {
+  syncBlobHook();
+});
+
+chrome.permissions?.onAdded?.addListener((permissions) => {
+  const matches = pageOrigins(permissions?.origins);
+  if (matches.length) hookMatches(matches);
 });
 
 chrome.downloads.onCreated.addListener((item) => {
@@ -519,12 +657,12 @@ chrome.downloads.onChanged.addListener((delta) => {
   }).catch((error) => console.warn("LID filename handler failed", error));
 });
 
-chrome.contextMenus.onClicked.addListener((info) => {
-  handleMenuClick(info).catch((error) => console.warn("LID menu handler failed", error));
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  handleMenuClick(info, tab).catch((error) => console.warn("LID menu handler failed", error));
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  handleMessage(message).then(
+  handleMessage(message, sender).then(
     sendResponse,
     () => sendResponse({ ok: false, code: "unexpected_response" }),
   );

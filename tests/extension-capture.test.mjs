@@ -114,3 +114,141 @@ test("EXT-CAP-003 blob hook retains bytes after object URL revocation", async ()
     page.URL.revokeObjectURL(url);
   }
 });
+
+test("EXT-CAP-004 blob hook records the last click anchor", async () => {
+  const source = await readFile(
+    new URL("../extension/blob-hook.js", import.meta.url),
+    "utf8",
+  );
+  const listeners = {};
+  const page = {
+    URL: {
+      createObjectURL: URL.createObjectURL.bind(URL),
+      revokeObjectURL: URL.revokeObjectURL.bind(URL),
+    },
+    Date: { now: () => 1234 },
+    addEventListener: (type, fn, options) => {
+      listeners[type] = { fn, options };
+    },
+  };
+  page.window = page;
+  runInNewContext(source, page, { filename: "blob-hook.js" });
+  const element = (rect, ancestor) => ({
+    getBoundingClientRect: () => rect,
+    closest: () => ancestor || element(rect, null),
+  });
+  const link = { getBoundingClientRect: () => ({ left: 40, right: 120, bottom: 60 }) };
+  link.closest = () => link;
+
+  assert.equal(listeners.pointerdown.options, true);
+  assert.equal(listeners.contextmenu.options, true);
+
+  listeners.pointerdown.fn({
+    target: link,
+    screenX: 540,
+    screenY: 320,
+    clientX: 50,
+    clientY: 30,
+  });
+  assert.deepEqual(
+    { ...page.__lidLastClick },
+    { left: 530, right: 610, bottom: 350, at: 1234 },
+  );
+
+  const button = { getBoundingClientRect: () => ({ left: 10, right: 90, bottom: 44 }) };
+  button.closest = () => button;
+  listeners.contextmenu.fn({
+    target: element({ left: 30, right: 40, bottom: 30 }, button),
+    screenX: 300,
+    screenY: 200,
+    clientX: 20,
+    clientY: 20,
+  });
+  assert.deepEqual(
+    { ...page.__lidLastClick },
+    { left: 290, right: 370, bottom: 224, at: 1234 },
+  );
+
+  listeners.pointerdown.fn({
+    target: link,
+    screenX: 0,
+    screenY: 0,
+    clientX: 0,
+    clientY: 0,
+  });
+  assert.deepEqual(
+    { ...page.__lidLastClick },
+    { left: 290, right: 370, bottom: 224, at: 1234 },
+  );
+});
+
+test("EXT-CAP-005 magnet hook hands magnet clicks to the worker", async () => {
+  const source = await readFile(
+    new URL("../extension/magnet-hook.js", import.meta.url),
+    "utf8",
+  );
+  const MAGNET = "magnet:?xt=urn:btih:abc&dn=Ubuntu";
+  let listeners = [];
+  const sent = [];
+  const page = {
+    addEventListener: (type, fn, options) => listeners.push({ type, fn, options }),
+    removeEventListener: (type, fn, options) => {
+      listeners = listeners.filter(
+        (l) => !(l.type === type && l.fn === fn && l.options === options),
+      );
+    },
+    chrome: { runtime: { sendMessage: (message) => sent.push({ ...message }) } },
+  };
+  page.window = page;
+  page.globalThis = page;
+  runInNewContext(source, page, { filename: "magnet-hook.js" });
+  const anchor = (href) => {
+    const link = { href };
+    const span = { closest: (selector) => (selector === "a[href]" ? link : null) };
+    return span;
+  };
+  const click = (target, extra = {}) => {
+    const event = {
+      type: "click",
+      target,
+      isTrusted: true,
+      button: 0,
+      defaultPrevented: false,
+      prevented: 0,
+      preventDefault() {
+        this.prevented++;
+      },
+      ...extra,
+    };
+    for (const entry of listeners.filter((l) => l.type === "click")) entry.fn(event);
+    return event;
+  };
+
+  assert.equal(listeners.filter((l) => l.type === "click").length, 1);
+  assert.equal(listeners[0].options, true);
+  let event = click(anchor(MAGNET));
+  assert.equal(event.prevented, 1);
+  assert.deepEqual(sent, [{ type: "lid-magnet", magnet: MAGNET }]);
+
+  for (const [label, target, extra] of [
+    ["untrusted", anchor(MAGNET), { isTrusted: false }],
+    ["already prevented", anchor(MAGNET), { defaultPrevented: true }],
+    ["middle button", anchor(MAGNET), { button: 1 }],
+    ["http link", anchor("https://site.example/x"), {}],
+  ]) {
+    event = click(target, extra);
+    assert.equal(event.prevented, 0, label);
+  }
+  assert.equal(sent.length, 1);
+
+  runInNewContext(source, page, { filename: "magnet-hook.js" });
+  assert.equal(listeners.filter((l) => l.type === "click").length, 1);
+  click(anchor(MAGNET));
+  assert.equal(sent.length, 2);
+
+  page.chrome.runtime.sendMessage = () => {
+    throw new Error("Extension context invalidated.");
+  };
+  event = click(anchor(MAGNET));
+  assert.equal(event.prevented, 0);
+});

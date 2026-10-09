@@ -28,4 +28,29 @@
     }
     return url;
   };
+  // Anchor of the last pointer click, in screen CSS px, so the worker can
+  // open the route picker right under the clicked link (EXT-CAP-004).
+  // Keyboard activations carry no screen position: keep the previous one.
+  function recordClick(event) {
+    try {
+      if (event.screenX === 0 && event.clientX === 0) return;
+      const target =
+        event.target.closest("a,button,[role=button],input") || event.target;
+      const rect = target.getBoundingClientRect();
+      const dx = event.screenX - event.clientX;
+      const dy = event.screenY - event.clientY;
+      window.__lidLastClick = {
+        left: dx + rect.left,
+        right: dx + rect.right,
+        bottom: dy + rect.bottom,
+        at: Date.now(),
+      };
+    } catch {
+      // Never break the page.
+    }
+  }
+  if (typeof window.addEventListener === "function") {
+    window.addEventListener("pointerdown", recordClick, true);
+    window.addEventListener("contextmenu", recordClick, true);
+  }
 })();

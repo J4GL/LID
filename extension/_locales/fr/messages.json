@@ -47,6 +47,9 @@
     "message": "Envoi vers LID…",
     "description": "Statut pendant l’envoi"
   },
+  "route_enabled": {
+    "message": "Site activé. Relancez le téléchargement sur la page : il sera désormais envoyé."
+  },
   "route_denied": {
     "message": "Accès à ce site refusé : téléchargez le .torrent puis glissez-le dans LID.",
     "description": "Permission d’origine refusée"
@@ -86,6 +89,15 @@
   "options_server": {
     "message": "Adresse du serveur",
     "description": "Étiquette de l’URL serveur"
+  },
+  "options_all_sites": {
+    "message": "Activer sur tous les sites"
+  },
+  "options_all_sites_ok": {
+    "message": "Activé sur tous les sites : les téléchargements sont capturés dès le premier clic."
+  },
+  "options_all_sites_fail": {
+    "message": "Impossible d’activer tous les sites."
   },
   "options_save": {
     "message": "Enregistrer",

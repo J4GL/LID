@@ -18,8 +18,11 @@ registered only for sites you allow.
   route picker opens (**Direct** / **Proxy**). On the first torrent from a
   new site, Chrome asks for one-click access to that site so the extension
   can fetch the file (cookies included for private trackers).
+- Click a `magnet:` link on an allowed site: the OS handler is skipped and
+  the same route picker opens under the link. Allow every site once in
+  Options to cover magnets everywhere.
 - Right-click any link and choose **Send to LID**: works for `magnet:` links
-  and direct `.torrent` URLs.
+  and direct `.torrent` URLs, on any site.
 - A notification confirms each addition or explains the failure (server
   unreachable, proxy unavailable, torrent already present…).
 
@@ -39,8 +42,9 @@ registered only for sites you allow.
   captured bytes remain available while the extension worker is running.
   Downloads Chrome cannot hand over at all (e.g. `data:` URLs) are left to
   download normally for the same manual fallback.
-- Left-clicking a `magnet:` link still goes to the OS handler; use
-  right-click → **Send to LID**.
+- On a site not yet allowed, or when a page opens a magnet from a script
+  rather than a link, the OS handler still gets it; use right-click →
+  **Send to LID**.
 
 ## Tests
 

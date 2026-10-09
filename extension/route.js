@@ -21,6 +21,7 @@ function setBusy(busy) {
 async function send(mode) {
   setBusy(true);
   setStatus(t("route_requesting"));
+  let newlyGranted = false;
   try {
     const lookup = await chrome.runtime.sendMessage({
       type: "lid-get-pending",
@@ -28,7 +29,9 @@ async function send(mode) {
     });
     if (!lookup?.ok) throw new Error("unexpected_response");
     if (lookup.pending.origin) {
-      if (!(await ensureOrigin(lookup.pending.origin))) {
+      if (!(await ensureOrigin(lookup.pending.origin, () => {
+          newlyGranted = true;
+        }))) {
         setStatus(t("route_denied"), "error");
         setBusy(false);
         return;
@@ -50,6 +53,19 @@ async function send(mode) {
       id,
       mode,
     });
+    if (
+      !result?.ok &&
+      newlyGranted &&
+      result?.code === "blob_unavailable"
+    ) {
+      // First grant: the page created its blob before the hook existed and
+      // has already revoked it. The hook is now installed; retry works.
+      setStatus(t("route_enabled"), "ok");
+      buttons.forEach((button) => {
+        button.hidden = true;
+      });
+      return;
+    }
     if (!result?.ok) throw new Error(result?.code || "unexpected_response");
     window.close();
   } catch (error) {
