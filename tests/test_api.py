@@ -1,3 +1,5 @@
+import re
+
 from fastapi.testclient import TestClient
 from app.config import Config
 from app.main import create_app
@@ -113,3 +115,28 @@ def test_server_static_001_static_files_must_be_revalidated():
         cached = client.get("/static/app.js", headers={"If-None-Match": etag})
         assert cached.status_code == 304
         assert not cached.content
+
+
+CSP_SOURCE = re.compile(
+    r"'(self|none|unsafe-inline|unsafe-eval|strict-dynamic)'"
+    r"|[a-z][a-z0-9+.-]*:"
+    r"|([a-z][a-z0-9+.-]*://)?(\*|(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)*)(:(\d+|\*))?(/\S*)?",
+    re.IGNORECASE,
+)
+
+
+def test_server_csp_001_policy_has_only_valid_sources():
+    with TestClient(create_app(Config(), FakeManager)) as client:
+        policy = client.get("/").headers["Content-Security-Policy"]
+    directives = {
+        name: sources
+        for name, *sources in (part.split() for part in policy.split(";") if part.strip())
+    }
+    assert " ".join(directives["connect-src"]) == "'self' http://127.0.0.1:*"
+    invalid = [
+        source
+        for sources in directives.values()
+        for source in sources
+        if not CSP_SOURCE.fullmatch(source)
+    ]
+    assert invalid == []

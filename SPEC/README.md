@@ -4,6 +4,7 @@
 - [Service upgrade](service/upgrade.md)
 - [Server binding](server/bind.md)
 - [Static asset caching](server/static-cache.md)
+- [Content-Security-Policy](server/csp.md)
 - [Flat final folder](storage/flat-final.md)
 - [Interrupted move recovery](storage/interrupted-move.md)
 - [Resume guard](storage/resume-guard.md)
@@ -23,6 +24,7 @@ Run the service installer specifications with:
 .venv/bin/python -m pytest tests/test_service_installer.py -q
 .venv/bin/python -m pytest tests/test_upgrade.py -q
 .venv/bin/python -m pytest tests/test_server_binding.py -q
+.venv/bin/python -m pytest tests/test_api.py -q
 .venv/bin/python -m pytest tests/test_moves.py -q
 .venv/bin/python -m pytest tests/test_migrate.py -q
 .venv/bin/python -m pytest tests/test_seeding.py -q

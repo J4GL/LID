@@ -88,8 +88,8 @@ class SecurityMiddleware:
                 headers["Referrer-Policy"] = "no-referrer"
                 headers["Content-Security-Policy"] = (
                     "default-src 'self'; script-src 'self'; style-src 'self'; "
-                    "img-src 'self' data:; connect-src 'self' http://127.0.0.1:* "
-                    "http://[::1]:*; frame-ancestors 'none'; base-uri 'none'; "
+                    "img-src 'self' data:; connect-src 'self' http://127.0.0.1:*; "
+                    "frame-ancestors 'none'; base-uri 'none'; "
                     "form-action 'self'"
                 )
                 if path.startswith("/api/"):
