@@ -83,3 +83,19 @@ test("DASH-COMPACT-002 compact toggle label is translated", () => {
   }
   i18n.setLanguage("en");
 });
+
+test("DISK-005 storage labels are translated", () => {
+  for (const [language, label, used] of [
+    ["en", "Destination disk", "Destination disk: 75 % used"],
+    ["fr", "Disque de destination", "Disque de destination : 75 % utilisé"],
+  ]) {
+    i18n.setLanguage(language);
+    assert.equal(i18n.t("metrics.destination"), label, language);
+    assert.equal(
+      i18n.t("metrics.destination_used", { value: "75 %" }),
+      used,
+      language,
+    );
+  }
+  i18n.setLanguage("en");
+});

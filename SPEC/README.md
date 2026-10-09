@@ -15,6 +15,7 @@
 - [Delete with files](storage/delete-with-files.md)
 - [Add route](dashboard/add-route.md)
 - [Compact view](dashboard/compact.md)
+- [Header](dashboard/header.md)
 - [Extension capture](extension/capture.md)
 - [Extension client](extension/client.md)
 - [Extension worker](extension/worker.md)
@@ -31,7 +32,7 @@ Run the service installer specifications with:
 .venv/bin/python -m pytest tests/test_seeding.py -q
 .venv/bin/python -m pytest tests/test_disk_usage.py -q
 .venv/bin/python -m pytest tests/test_remove_files.py -q
-.venv/bin/python -m pytest tests/test_dashboard_compact.py -q
+.venv/bin/python -m pytest tests/test_dashboard_compact.py tests/test_dashboard_header.py tests/test_dashboard_storage.py -q
 node --test tests/timeago.test.mjs
 node --test tests/add-route.test.mjs tests/compact.test.mjs tests/i18n.test.mjs
 node --test tests/extension-capture.test.mjs tests/extension-client.test.mjs tests/extension-worker.test.mjs

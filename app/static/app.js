@@ -114,42 +114,54 @@ function setMetric(id, n, suffix = "/s") {
   unit.textContent = parts[1] + suffix;
   $(id).append(unit);
 }
-function renderDisks(disks) {
-  const widget = $("disk-widget");
-  widget.replaceChildren();
-  if (!disks.length) {
-    widget.hidden = true;
-    return;
+const diskLevel = (ratio) =>
+  ratio >= 0.9 ? "full" : ratio >= 0.8 ? "warn" : "ok";
+function diskUsage(disk) {
+  const used = Math.max(0, Number(disk.used) || 0);
+  const total = Math.max(0, Number(disk.total) || 0);
+  const ratio = total ? Math.min(1, used / total) : 0;
+  return {
+    ratio,
+    level: diskLevel(ratio),
+    text: `${formatBytes(used)} / ${formatBytes(total)}`,
+  };
+}
+function renderStorage(disks) {
+  const temporary = disks.find((disk) => disk.label === "downloads");
+  const destination =
+    disks.find((disk) => disk.label === "completed") || temporary;
+  const footer = $("temporary-disk");
+  footer.hidden = !temporary;
+  if (temporary) {
+    const usage = diskUsage(temporary);
+    footer.title = temporary.path || "";
+    footer.querySelector(".disk-text").textContent = usage.text;
+    footer.querySelector(".disk-bar").className = `disk-bar ${usage.level}`;
+    footer.querySelector(".disk-fill").style.width =
+      `${(usage.ratio * 100).toFixed(1)}%`;
   }
-  widget.hidden = false;
-  for (const disk of disks) {
-    const used = Math.max(0, Number(disk.used) || 0);
-    const total = Math.max(0, Number(disk.total) || 0);
-    const ratio = total ? used / total : 0;
-    const wrap = document.createElement("span");
-    wrap.className = "disk";
-    wrap.title = disk.path || "";
-    const label = document.createElement("span");
-    label.className = "disk-label";
-    label.textContent = t(
-      disk.label === "completed" ? "disk.completed" : "disk.downloads",
+  const card = $("destination-disk");
+  card.hidden = !destination;
+  if (destination) {
+    const usage = diskUsage(destination);
+    const percent = `${Math.round(usage.ratio * 100)} %`;
+    const pie = card.querySelector(".disk-pie");
+    card.title = destination.path || "";
+    pie.setAttribute("class", `disk-pie ${usage.level}`);
+    pie.setAttribute(
+      "aria-label",
+      t("metrics.destination_used", { value: percent }),
     );
-    const text = document.createElement("span");
-    text.className = "disk-text";
-    text.textContent = `${formatBytes(used)} / ${formatBytes(total)}`;
-    const bar = document.createElement("span");
-    bar.className = `disk-bar ${ratio >= 0.9 ? "full" : ratio >= 0.8 ? "warn" : "ok"}`;
-    const fill = document.createElement("span");
-    fill.className = "disk-fill";
-    fill.style.width = `${Math.min(100, ratio * 100).toFixed(1)}%`;
-    bar.append(fill);
-    wrap.append(label, text, bar);
-    widget.append(wrap);
+    card
+      .querySelector(".disk-pie-used")
+      .setAttribute("stroke-dasharray", `${(usage.ratio * 100).toFixed(1)} 100`);
+    $("destination-percent").textContent = percent;
+    $("destination-text").textContent = usage.text;
   }
 }
 function render(data) {
   Object.assign(state, data);
-  renderDisks(data.disks || []);
+  renderStorage(data.disks || []);
   setMetric("total-down", data.download_rate);
   setMetric("total-up", data.upload_rate);
   $("global-ratio").textContent = Number(data.global_ratio || 0).toFixed(2);

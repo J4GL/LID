@@ -1,7 +1,8 @@
 ## DASH-COMPACT-001 — Le toggle bascule et mémorise la vue compacte
 
 Implement: `installCompactToggle` dans `app/static/compact.js`, branché par
-`app/static/app.js` sur le bouton `#compact-toggle` de `.list-heading` et sur
+`app/static/app.js` sur le bouton `#compact-toggle` du header (juste après
+`#language-toggle`) et sur
 `#torrent-list`, avec `localStorage` comme stockage.
 
 Test: unit · `tests/compact.test.mjs` · "DASH-COMPACT-001 toggles and remembers the compact view"
@@ -53,11 +54,13 @@ Test: e2e · `tests/test_dashboard_compact.py` · `test_dash_compact_003_one_lin
   `last_upload_at` = maintenant − 6 h) — ouverte dans obscura (viewport 1280 px,
   langue `en`, stockage vide)
 - When: la page est chargée
-- Then: `#compact-toggle` est `aria-pressed="false"`, chaque ligne fait plus de
+- Then: `#compact-toggle` est dans `.header`, juste après `#language-toggle`
+  (élément suivant, à sa droite, même centre vertical à 1 px près) ; il est
+  `aria-pressed="false"` et n'affiche que son icône `.icon-normal`, chaque ligne fait plus de
   56 px de haut et sa barre `progress` mesure `Wn` px de large
 - When: l'utilisateur clique sur `#compact-toggle`
 - Then: `#torrent-list` a la classe `compact` et le bouton est
-  `aria-pressed="true"` ; pour chaque ligne, nom, ratio, pourcentage, barre, ↓, ↑, dernière activité
+  `aria-pressed="true"` et n'affiche que son icône `.icon-compact` ; pour chaque ligne, nom, ratio, pourcentage, barre, ↓, ↑, dernière activité
   et actions sont visibles, se chevauchent verticalement (`max(top) < min(bottom)`),
   apparaissent dans cet ordre de gauche à droite, et la ligne fait au plus 56 px ;
   badge, taille, pairs, volumes, état et chemin sont masqués et
@@ -67,4 +70,4 @@ Test: e2e · `tests/test_dashboard_compact.py` · `test_dash_compact_003_one_lin
   dépasse la largeur affichée ; la dernière activité affiche `6h ago` pour `seed` et `Never shared` pour `long`
 - When: l'utilisateur clique de nouveau sur `#compact-toggle`
 - Then: `#torrent-list` n'a plus la classe `compact`, le bouton est
-  `aria-pressed="false"` et chaque barre mesure `Wn` px à 1 px près
+  `aria-pressed="false"` et n'affiche que son icône `.icon-normal`, et chaque barre mesure `Wn` px à 1 px près

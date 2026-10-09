@@ -1,16 +1,8 @@
-import json
-import os
-import shutil
-import subprocess
-import threading
 import time
-
-import pytest
-import uvicorn
 
 from app.config import Config
 from app.main import create_app
-from tests.support import free_port
+from tests.browser import LiveServer, obscura
 
 LONG_NAME = "debian-live-" + "x" * 180 + "-amd64.iso"
 SIX_HOURS = 6 * 3600
@@ -76,51 +68,6 @@ class FakeManager:
         }
 
 
-class LiveServer:
-    def __init__(self, app):
-        self.port = free_port()
-        self.server = uvicorn.Server(
-            uvicorn.Config(app, host="127.0.0.1", port=self.port, log_level="error")
-        )
-        self.thread = threading.Thread(target=self.server.run, daemon=True)
-
-    def __enter__(self):
-        self.thread.start()
-        deadline = time.monotonic() + 10
-        while not self.server.started:
-            assert time.monotonic() < deadline, "server did not start"
-            time.sleep(0.05)
-        return f"http://127.0.0.1:{self.port}/"
-
-    def __exit__(self, *exc):
-        self.server.should_exit = True
-        self.thread.join(10)
-
-
-def obscura(url, script):
-    binary = os.environ.get("OBSCURA") or shutil.which("obscura")
-    if not binary:
-        pytest.fail("obscura is required for dashboard e2e tests (set OBSCURA)")
-    result = subprocess.run(
-        [
-            binary,
-            "--allow-private-network",
-            "fetch",
-            "-q",
-            "--wait",
-            "2",
-            url,
-            "-e",
-            script,
-        ],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=True,
-    )
-    return json.loads(result.stdout.strip().splitlines()[-1])
-
-
 # Runs synchronously in the page once obscura has settled: click, then measure.
 MEASURE = r"""
 (() => { try {
@@ -151,6 +98,8 @@ MEASURE = r"""
   const snap = () => ({
     compact: list.classList.contains("compact"),
     pressed: button.getAttribute("aria-pressed"),
+    icons: ["normal", "compact"].filter((icon) =>
+      shown(button.querySelector(`.icon-${icon}`))),
     labelsShown: shown(document.getElementById("table-labels")),
     rows: [...list.querySelectorAll(".torrent-row")].map((row) => {
       const name = row.querySelector(".torrent-name");
@@ -168,7 +117,17 @@ MEASURE = r"""
       };
     }),
   });
-  const result = { width: window.innerWidth, normal: snap() };
+  const language = document.getElementById("language-toggle");
+  const result = {
+    width: window.innerWidth,
+    toggle: {
+      inHeader: !!button.closest(".header"),
+      afterLanguage: language.nextElementSibling === button,
+      language: box(language),
+      button: box(button),
+    },
+    normal: snap(),
+  };
   button.click();
   result.compact = snap();
   button.click();
@@ -196,12 +155,20 @@ def test_dash_compact_003_one_line_rows_with_half_width_bar():
     )
     assert set(normal) == {"long", "seed"}
 
+    toggle = result["toggle"]
+    assert toggle["inHeader"] is True
+    assert toggle["afterLanguage"] is True
+    assert toggle["button"]["left"] >= toggle["language"]["left"] + toggle["language"]["width"]
+    middle = lambda b: b["top"] + b["height"] / 2
+    assert abs(middle(toggle["button"]) - middle(toggle["language"])) <= 1
     assert result["normal"]["pressed"] == "false"
+    assert result["normal"]["icons"] == ["normal"]
     for row in normal.values():
         assert row["row"]["height"] > 56
 
     assert result["compact"]["compact"] is True
     assert result["compact"]["pressed"] == "true"
+    assert result["compact"]["icons"] == ["compact"]
     assert result["compact"]["labelsShown"] is False
     order = ["name", "ratio", "percent", "bar", "down", "up", "activity", "actions"]
     for key, row in compact.items():
@@ -225,6 +192,7 @@ def test_dash_compact_003_one_line_rows_with_half_width_bar():
 
     assert result["back"]["compact"] is False
     assert result["back"]["pressed"] == "false"
+    assert result["back"]["icons"] == ["normal"]
     for key, row in back.items():
         assert (
             abs(row["parts"]["bar"]["width"] - normal[key]["parts"]["bar"]["width"])

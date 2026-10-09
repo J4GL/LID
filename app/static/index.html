@@ -20,9 +20,31 @@
       <span class="header-label" data-i18n="header.tagline"
         >Linux ISO Downloader</span
       >
+      <button class="button primary" id="add-button">
+        <span class="add-icon" aria-hidden="true">＋</span
+        ><span class="add-label" data-i18n="add.open">Add a torrent</span>
+      </button>
       <button id="language-toggle" class="language-toggle" type="button">
         <span data-language="en" class="active">EN</span
         ><i aria-hidden="true"></i><span data-language="fr">FR</span>
+      </button>
+      <button
+        id="compact-toggle"
+        class="view-toggle"
+        type="button"
+        aria-pressed="false"
+        title="Compact view"
+        aria-label="Compact view"
+        data-i18n-title="list.compact"
+        data-i18n-aria="list.compact"
+      >
+        <svg class="icon-normal" viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="2" y="2.5" width="12" height="4.5" rx="1" />
+          <rect x="2" y="9" width="12" height="4.5" rx="1" />
+        </svg>
+        <svg class="icon-compact" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M2 3h12M2 6.33h12M2 9.67h12M2 13h12" />
+        </svg>
       </button>
       <button
         id="proxy-status"
@@ -37,19 +59,7 @@
     </header>
 
     <main>
-      <section class="page-heading">
-        <div>
-          <span class="eyebrow" data-i18n="dashboard">DASHBOARD</span>
-          <h1>
-            <span data-i18n="transfers">Transfers</span
-            ><span class="heading-dot">.</span>
-          </h1>
-        </div>
-        <button class="button primary" id="add-button">
-          <span class="add-icon" aria-hidden="true">＋</span
-          ><span data-i18n="add.open">Add a torrent</span>
-        </button>
-      </section>
+      <h1 class="sr-only" data-i18n="transfers">Transfers</h1>
       <section
         class="metrics"
         aria-label="Global activity"
@@ -91,6 +101,28 @@
             >Total uploaded / downloaded</span
           >
         </div>
+        <div class="metric metric-disk" id="destination-disk" hidden>
+          <span class="metric-label"
+            ><span class="metric-icon neutral">◔</span
+            ><span data-i18n="metrics.destination">Destination disk</span></span
+          >
+          <div class="disk-pie-row">
+            <svg class="disk-pie ok" viewBox="0 0 32 32" role="img">
+              <circle class="disk-pie-free" cx="16" cy="16" r="16" />
+              <circle
+                class="disk-pie-used"
+                cx="16"
+                cy="16"
+                r="8"
+                pathLength="100"
+                stroke-dasharray="0 100"
+                transform="rotate(-90 16 16)"
+              />
+            </svg>
+            <strong id="destination-percent">0 %</strong>
+          </div>
+          <span class="metric-note" id="destination-text"></span>
+        </div>
       </section>
 
       <section class="transfers" aria-labelledby="list-title">
@@ -99,31 +131,14 @@
             <span data-i18n="list.title">My torrents</span>
             <span id="torrent-count" class="count">0</span>
           </h2>
-          <div class="disk-widget" id="disk-widget" hidden></div>
-          <div class="list-tools">
-            <div class="route-legend">
-              <span
-                ><i class="blue-bg"></i
-                ><span data-i18n="list.direct">Direct</span></span
-              ><span
-                ><i class="red-bg"></i
-                ><span data-i18n="list.proxy">Proxy</span></span
-              >
-            </div>
-            <button
-              id="compact-toggle"
-              class="view-toggle"
-              type="button"
-              aria-pressed="false"
-              title="Compact view"
-              aria-label="Compact view"
-              data-i18n-title="list.compact"
-              data-i18n-aria="list.compact"
+          <div class="route-legend">
+            <span
+              ><i class="blue-bg"></i
+              ><span data-i18n="list.direct">Direct</span></span
+            ><span
+              ><i class="red-bg"></i
+              ><span data-i18n="list.proxy">Proxy</span></span
             >
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M2 4h12M2 8h12M2 12h12" />
-              </svg>
-            </button>
           </div>
         </div>
         <div
@@ -175,7 +190,10 @@
           ><span id="live-label" data-i18n="footer.connecting"
             >Connecting to the application…</span
           ></span
-        ><span data-i18n="footer.tagline">Two routes. One space.</span
+        ><span class="footer-disk" id="temporary-disk" hidden
+          ><span class="disk-label" data-i18n="disk.downloads">Downloads</span
+          ><span class="disk-text"></span
+          ><span class="disk-bar ok"><span class="disk-fill"></span></span></span
         ><button
           id="storage-button"
           class="text-button"
