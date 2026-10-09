@@ -81,7 +81,7 @@ class FakeFiles:
 
 
 def fake_handle(entries):
-    info = SimpleNamespace(files=lambda: FakeFiles(entries))
+    info = SimpleNamespace(layout=lambda: FakeFiles(entries))
     return SimpleNamespace(
         torrent_file=lambda: info, save_resume_data=lambda *args: None
     )

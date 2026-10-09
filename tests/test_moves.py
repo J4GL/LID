@@ -20,7 +20,6 @@ from tests.test_integration import engine_config, seeder, set_health
 
 def multi_torrent(root, name="album", seed=1):
     root.mkdir(parents=True)
-    storage = lt.file_storage()
     files = {
         f"{name}/a.bin": bytes([seed]) * 80000,
         f"{name}/nested/b.bin": bytes([seed + 1]) * 120000,
@@ -29,8 +28,8 @@ def multi_torrent(root, name="album", seed=1):
         target = root / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(body)
-        storage.add_file(name, len(body))
-    torrent = lt.create_torrent(storage, 16384, lt.create_torrent.v1_only)
+    entries = [lt.create_file_entry(name, len(body)) for name, body in files.items()]
+    torrent = lt.create_torrent(entries, 16384, lt.create_torrent.v1_only)
     torrent.set_priv(False)
     lt.set_piece_hashes(torrent, str(root))
     return bytes(lt.bencode(torrent.generate())), files

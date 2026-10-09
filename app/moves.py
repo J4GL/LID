@@ -166,7 +166,7 @@ class CompletionMoves:
 
     @staticmethod
     def file_list(info, folder=None):
-        files = info.files()
+        files = info.layout()
         listed = [
             {"path": files.file_path(i), "size": files.file_size(i)}
             for i in range(files.num_files())
@@ -305,7 +305,7 @@ class CompletionMoves:
         if state["phase"] == "verifying":
             # Fresh add_torrent_params triggers a full check, with no cached
             # pieces and no earlier fast-resume checked alert to confuse it.
-            handle.set_upload_mode(True)
+            handle.set_flags(lt.torrent_flags.upload_mode)
 
     def scan_completions(self):
         changed = False
@@ -556,7 +556,7 @@ class CompletionMoves:
                     manual_retry=False,
                     retry_at=0,
                 )
-                handle.set_upload_mode(False)
+                handle.unset_flags(lt.torrent_flags.upload_mode)
                 if not record["paused"] and self.engine.allowed():
                     handle.resume()
                 else:

@@ -103,7 +103,7 @@ def safe_path(path):
 
 
 def validate_info(info):
-    files = info.files()
+    files = info.layout()
     if files.num_files() > 100000:
         raise ValueError("Le torrent contient trop de fichiers.")
     for i in range(files.num_files()):
@@ -145,20 +145,13 @@ def parse_source(source, mode):
         if b"file tree" in info:
             inspect_tree(info[b"file tree"])
         nodes = normalize_nodes(raw.pop(b"nodes", [])) if mode == "proxy" else []
-        params = lt.add_torrent_params()
-        params.ti = lt.torrent_info(raw)
-        # These names are retained for our SOCKS resolver, then removed from
-        # add_torrent_params before handing the torrent to a session.
-        if mode == "proxy":
-            params.dht_nodes = nodes
-        validate_info(params.ti)
-        params.trackers = [x.url for x in params.ti.trackers()]
-        for seed in params.ti.web_seeds():
-            if seed.get("type", 0) == 0:
-                params.url_seeds = [*params.url_seeds, seed["url"]]
-            else:
-                params.http_seeds = [*params.http_seeds, seed["url"]]
         source = bytes(lt.bencode(raw))
+        params = lt.load_torrent_buffer(source)
+        # These names are retained for our SOCKS resolver, then removed from
+        # add_torrent_params before handing the torrent to a session. Direct
+        # mode keeps none, as before load_torrent_buffer copied them.
+        params.dht_nodes = nodes
+        validate_info(params.ti)
     else:
         if len(source) > 32768 or not source.startswith("magnet:?"):
             raise ValueError("Lien magnet invalide.")
@@ -265,7 +258,7 @@ def apply_folder(params, folder):
     """
     if not folder or not params.ti:
         return params
-    files = params.ti.files()
+    files = params.ti.layout()
     params.renamed_files = {
         i: str(Path(folder, *Path(files.file_path(i)).parts[1:]))
         for i in range(files.num_files())

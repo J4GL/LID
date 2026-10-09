@@ -462,7 +462,7 @@ class Engine:
                         [str(hashes.v1)] if hashes.has_v1() else []
                     ) + ([str(hashes.v2)] if hashes.has_v2() else [])
                     self.persist()
-                    handle.set_upload_mode(False)
+                    handle.unset_flags(lt.torrent_flags.upload_mode)
                     self.request_saves()
                 except Exception:
                     handle.pause()

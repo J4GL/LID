@@ -6,7 +6,7 @@ import pytest
 import yaml
 import signal
 import time
-import httpx
+import httpx2
 from app.launch import check_port
 from tests.support import free_port
 
@@ -70,13 +70,13 @@ def test_shutdown_with_open_sse_releases_lock_and_ports(tmp_path):
         command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
     )
     try:
-        with httpx.Client(base_url=f"http://127.0.0.1:{port}", timeout=2) as client:
+        with httpx2.Client(base_url=f"http://127.0.0.1:{port}", timeout=2) as client:
             deadline = time.monotonic() + 10
             while True:
                 try:
                     client.get("/api/bootstrap").raise_for_status()
                     break
-                except httpx.TransportError:
+                except httpx2.TransportError:
                     if time.monotonic() > deadline:
                         raise AssertionError("Server failed to start")
                     time.sleep(0.1)

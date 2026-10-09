@@ -27,9 +27,9 @@ def make_torrent(
     root.mkdir(parents=True, exist_ok=True)
     payload = bytes((i + seed) % 251 for i in range(size))
     (root / name).write_bytes(payload)
-    storage = lt.file_storage()
-    storage.add_file(name, len(payload))
-    creator = lt.create_torrent(storage, 16384, lt.create_torrent.v1_only)
+    creator = lt.create_torrent(
+        [lt.create_file_entry(name, len(payload))], 16384, lt.create_torrent.v1_only
+    )
     creator.set_priv(private)
     if tracker:
         creator.add_tracker(tracker)
