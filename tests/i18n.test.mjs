@@ -62,6 +62,17 @@ test("the initial document is English and exposes translatable controls", async 
   assert.match(html, /data-i18n-aria="list\.aria"/);
 });
 
+test("ADD-ROUTE-002 route required message is translated", () => {
+  for (const [language, expected] of [
+    ["en", "Choose a route first: Direct or Proxy."],
+    ["fr", "Choisissez d’abord une route : Direct ou Proxy."],
+  ]) {
+    i18n.setLanguage(language);
+    assert.equal(i18n.localizedError("route_required"), expected, language);
+  }
+  i18n.setLanguage("en");
+});
+
 test("DASH-COMPACT-002 compact toggle label is translated", () => {
   for (const [language, expected] of [
     ["en", "Compact view"],

@@ -1,5 +1,6 @@
-import { installDropZones } from "./drop.js";
+import { createRoutePicker } from "./add-route.js";
 import { installCompactToggle } from "./compact.js";
+import { installDropZones } from "./drop.js";
 import { installFolderSettings } from "./folders.js";
 import { formatAgo } from "./timeago.js";
 import {
@@ -13,7 +14,6 @@ import {
 initI18n();
 const $ = (id) => document.getElementById(id);
 let token = "",
-  chosenMode = null,
   bootstrap = {},
   busy = false,
   addError = null,
@@ -364,14 +364,21 @@ async function torrentAction(id, remove = false, deleteFiles = false) {
     toastError(e);
   }
 }
+const route = createRoutePicker({
+  picker: document.querySelector(".mode-picker"),
+  choices: [...document.querySelectorAll(".mode-choice")],
+  onMissing: () => {
+    addError = { code: "route_required" };
+    renderAddError();
+  },
+  onSelect: () => {
+    addError = null;
+    renderAddError();
+  },
+});
 function openAdd() {
-  chosenMode = null;
+  route.reset();
   addError = null;
-  document
-    .querySelectorAll(".mode-choice")
-    .forEach((b) => b.setAttribute("aria-pressed", "false"));
-  $("pick-files").disabled = true;
-  $("magnet-submit").disabled = true;
   renderAddError();
   $("add-dialog").showModal();
 }
@@ -385,19 +392,6 @@ installCompactToggle({
 });
 $("add-button").onclick = openAdd;
 $("empty-add").onclick = openAdd;
-document.querySelectorAll(".mode-choice").forEach(
-  (button) =>
-    (button.onclick = () => {
-      chosenMode = button.dataset.mode;
-      document
-        .querySelectorAll(".mode-choice")
-        .forEach((b) => b.setAttribute("aria-pressed", String(b === button)));
-      $("pick-files").disabled = busy;
-      $("magnet-submit").disabled = busy;
-      addError = null;
-      renderAddError();
-    }),
-);
 document.querySelectorAll("dialog").forEach((dialog) => {
   dialog.querySelector(".dialog-close").onclick = () => {
     if (dialog.dataset.locked !== "true") dialog.close();
@@ -415,11 +409,13 @@ document.querySelectorAll("dialog").forEach((dialog) => {
     }
   });
 });
-$("pick-files").onclick = () => $("file-input").click();
+$("pick-files").onclick = () => {
+  if (route.require()) $("file-input").click();
+};
 function setBusy(value) {
   busy = value;
-  $("pick-files").disabled = value || !chosenMode;
-  $("magnet-submit").disabled = value || !chosenMode;
+  $("pick-files").disabled = value;
+  $("magnet-submit").disabled = value;
 }
 async function addFiles(files, mode) {
   if (!mode) return;
@@ -454,18 +450,19 @@ async function addFiles(files, mode) {
   }
 }
 $("file-input").onchange = (e) => {
-  if (e.target.files.length) addFiles(e.target.files, chosenMode);
+  if (e.target.files.length) addFiles(e.target.files, route.mode);
 };
 $("magnet-form").onsubmit = async (e) => {
   e.preventDefault();
-  if (!chosenMode || busy) return;
+  const mode = route.require();
+  if (!mode || busy) return;
   setBusy(true);
   try {
     await api("/api/torrents/magnet", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        mode: chosenMode,
+        mode,
         magnet: $("magnet-input").value.trim(),
       }),
     });

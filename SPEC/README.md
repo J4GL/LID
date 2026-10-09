@@ -13,6 +13,7 @@
 - [Seeding auto-remove](seeding/auto-remove.md)
 - [Disk usage](storage/disk-usage.md)
 - [Delete with files](storage/delete-with-files.md)
+- [Add route](dashboard/add-route.md)
 - [Compact view](dashboard/compact.md)
 - [Extension capture](extension/capture.md)
 - [Extension client](extension/client.md)
@@ -32,7 +33,7 @@ Run the service installer specifications with:
 .venv/bin/python -m pytest tests/test_remove_files.py -q
 .venv/bin/python -m pytest tests/test_dashboard_compact.py -q
 node --test tests/timeago.test.mjs
-node --test tests/compact.test.mjs tests/i18n.test.mjs
+node --test tests/add-route.test.mjs tests/compact.test.mjs tests/i18n.test.mjs
 node --test tests/extension-capture.test.mjs tests/extension-client.test.mjs tests/extension-worker.test.mjs
 ```
 

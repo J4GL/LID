@@ -241,6 +241,7 @@ const messages = {
     "error.torrent_not_found": "Torrent not found.",
     "error.duplicate_torrent": "This torrent has already been added.",
     "error.invalid_torrent": "Invalid torrent or magnet link.",
+    "error.route_required": "Choose a route first: Direct or Proxy.",
     "error.engine_unavailable":
       "Torrent engine unavailable. Restart the application.",
     "error.storage_collision":
@@ -507,6 +508,7 @@ const messages = {
     "error.torrent_not_found": "Torrent introuvable.",
     "error.duplicate_torrent": "Ce torrent est déjà présent.",
     "error.invalid_torrent": "Torrent ou magnet invalide.",
+    "error.route_required": "Choisissez d’abord une route : Direct ou Proxy.",
     "error.engine_unavailable":
       "Moteur torrent indisponible. Redémarrez l’application.",
     "error.storage_collision":

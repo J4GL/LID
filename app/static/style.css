@@ -894,6 +894,9 @@ dialog::backdrop {
   border-color: var(--red);
   background: #f1848614;
 }
+.mode-picker.needs-route .mode-choice {
+  border-color: var(--red);
+}
 .direct-choice .choice-icon {
   color: var(--blue);
 }
