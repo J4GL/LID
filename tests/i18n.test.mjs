@@ -61,3 +61,14 @@ test("the initial document is English and exposes translatable controls", async 
   assert.match(html, /data-i18n="folders\.title"/);
   assert.match(html, /data-i18n-aria="list\.aria"/);
 });
+
+test("DASH-COMPACT-002 compact toggle label is translated", () => {
+  for (const [language, expected] of [
+    ["en", "Compact view"],
+    ["fr", "Vue compacte"],
+  ]) {
+    i18n.setLanguage(language);
+    assert.equal(i18n.t("list.compact"), expected, language);
+  }
+  i18n.setLanguage("en");
+});

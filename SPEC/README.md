@@ -12,6 +12,7 @@
 - [Seeding auto-remove](seeding/auto-remove.md)
 - [Disk usage](storage/disk-usage.md)
 - [Delete with files](storage/delete-with-files.md)
+- [Compact view](dashboard/compact.md)
 - [Extension capture](extension/capture.md)
 - [Extension client](extension/client.md)
 - [Extension worker](extension/worker.md)
@@ -27,7 +28,9 @@ Run the service installer specifications with:
 .venv/bin/python -m pytest tests/test_seeding.py -q
 .venv/bin/python -m pytest tests/test_disk_usage.py -q
 .venv/bin/python -m pytest tests/test_remove_files.py -q
+.venv/bin/python -m pytest tests/test_dashboard_compact.py -q
 node --test tests/timeago.test.mjs
+node --test tests/compact.test.mjs tests/i18n.test.mjs
 node --test tests/extension-capture.test.mjs tests/extension-client.test.mjs tests/extension-worker.test.mjs
 ```
 
@@ -36,3 +39,7 @@ For the extension blob regression tests (proxy uploads only):
 ```sh
 node --test --test-name-pattern='EXT-CAP-|EXT-SW-(00[2346789]|010)|EXT-CLI-00[234]' tests/extension-capture.test.mjs tests/extension-client.test.mjs tests/extension-worker.test.mjs
 ```
+
+The dashboard e2e tests drive the real application with the
+`obscura` headless browser (0.2.3 or later): it must be on
+`PATH` (or set `OBSCURA=/path/to/obscura`); the tests fail when it is missing.

@@ -1,4 +1,5 @@
 import { installDropZones } from "./drop.js";
+import { installCompactToggle } from "./compact.js";
 import { installFolderSettings } from "./folders.js";
 import { formatAgo } from "./timeago.js";
 import {
@@ -178,7 +179,7 @@ function render(data) {
       node.className = "torrent-row";
       node.dataset.mode = row.mode;
       node.innerHTML =
-        '<div class="torrent-info"><h3 class="torrent-name"></h3><div class="torrent-meta"><span class="badge"></span><span class="torrent-size"></span><span class="torrent-peers"></span><span class="torrent-ratio"></span><span class="torrent-volumes"></span></div></div><div class="torrent-progress"><div class="progress-label"><span class="progress-state"><span class="torrent-state"></span><span class="torrent-last-upload" hidden></span></span><strong class="torrent-percent"></strong></div><progress max="1" value="0"></progress></div><div class="transfer-speeds"><span class="torrent-down"></span><span class="torrent-up"></span></div><div class="torrent-actions"><button class="icon-button pause-action"></button><button class="icon-button remove-action">✕</button><button class="icon-button delete-action">\u{1F5D1}\uFE0E</button></div><div class="delete-confirm" hidden><span class="delete-confirm-text"></span><button class="button danger confirm-delete"></button><button class="text-button cancel-delete"></button></div><div class="torrent-location"><span class="torrent-path"></span><span class="move-target" hidden></span><span class="move-error" hidden></span><button class="text-button retry-move" hidden></button></div><p class="torrent-error" hidden></p>';
+        '<div class="torrent-info"><h3 class="torrent-name"></h3><div class="torrent-meta"><span class="badge"></span><span class="torrent-size"></span><span class="torrent-peers"></span><span class="torrent-ratio"></span><span class="torrent-volumes"></span></div></div><div class="torrent-progress"><div class="progress-label"><span class="progress-state"><span class="torrent-state"></span><span class="torrent-last-upload" hidden></span></span><strong class="torrent-percent"></strong></div><progress max="1" value="0"></progress></div><div class="transfer-speeds"><span class="torrent-down"></span><span class="torrent-up"></span></div><span class="torrent-activity"></span><div class="torrent-actions"><button class="icon-button pause-action"></button><button class="icon-button remove-action">✕</button><button class="icon-button delete-action">\u{1F5D1}\uFE0E</button></div><div class="delete-confirm" hidden><span class="delete-confirm-text"></span><button class="button danger confirm-delete"></button><button class="text-button cancel-delete"></button></div><div class="torrent-location"><span class="torrent-path"></span><span class="move-target" hidden></span><span class="move-error" hidden></span><button class="text-button retry-move" hidden></button></div><p class="torrent-error" hidden></p>';
       rowNodes.set(row.id, node);
       $("torrent-list").append(node);
       node.querySelector(".pause-action").onclick = () => torrentAction(row.id);
@@ -246,15 +247,20 @@ function render(data) {
       downloaded: formatBytes(row.downloaded),
       uploaded: formatBytes(row.uploaded),
     });
+    const lastUploadAgo = formatAgo(
+      row.last_upload_at ?? null,
+      Date.now() / 1000,
+      getLanguage(),
+    );
+    q(".torrent-activity").textContent = lastUploadAgo;
+    q(".torrent-activity").title = t("torrent.last_upload", {
+      value: lastUploadAgo,
+    });
     const lastUpload = q(".torrent-last-upload");
     if (row.state_code === "seeding" || row.state_code === "finished") {
       lastUpload.hidden = false;
       lastUpload.textContent = `( ${t("torrent.last_upload", {
-        value: formatAgo(
-          row.last_upload_at ?? null,
-          Date.now() / 1000,
-          getLanguage(),
-        ),
+        value: lastUploadAgo,
       })} )`;
     } else {
       lastUpload.hidden = true;
@@ -369,6 +375,14 @@ function openAdd() {
   renderAddError();
   $("add-dialog").showModal();
 }
+installCompactToggle({
+  button: $("compact-toggle"),
+  list: $("torrent-list"),
+  storage: {
+    getItem: (key) => localStorage.getItem(key),
+    setItem: (key, value) => localStorage.setItem(key, value),
+  },
+});
 $("add-button").onclick = openAdd;
 $("empty-add").onclick = openAdd;
 document.querySelectorAll(".mode-choice").forEach(

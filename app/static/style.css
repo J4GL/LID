@@ -581,6 +581,102 @@ progress::-moz-progress-bar {
   gap: 7px;
   justify-content: flex-end;
 }
+.torrent-activity {
+  display: none;
+}
+#torrent-list.compact .torrent-row {
+  /* Same content width as the normal grid: the bar track is half of its 1.8fr. */
+  grid-template-columns:
+    minmax(0, 1fr) minmax(56px, auto) minmax(44px, auto)
+    calc((100% - 184px) * 0.18) minmax(128px, auto) minmax(72px, auto) auto;
+  gap: 8px 12px;
+  min-height: auto;
+  padding: 8px 18px;
+}
+#torrent-list.compact .torrent-info,
+#torrent-list.compact .torrent-meta,
+#torrent-list.compact .torrent-progress,
+#torrent-list.compact .progress-label {
+  display: contents;
+}
+#torrent-list.compact .badge,
+#torrent-list.compact .torrent-size,
+#torrent-list.compact .torrent-peers,
+#torrent-list.compact .torrent-volumes,
+#torrent-list.compact .progress-state,
+#torrent-list.compact .torrent-location,
+.table-labels:has(+ #torrent-list.compact) {
+  display: none;
+}
+#torrent-list.compact .torrent-name {
+  margin: 0;
+  font-size: 0.84rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
+}
+#torrent-list.compact .torrent-ratio,
+#torrent-list.compact .torrent-percent,
+#torrent-list.compact .torrent-activity {
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+#torrent-list.compact .torrent-ratio,
+#torrent-list.compact .torrent-activity {
+  display: block;
+  color: #8d95a3;
+}
+#torrent-list.compact .torrent-percent {
+  text-align: right;
+  font-weight: 500;
+  color: #c7ced9;
+}
+#torrent-list.compact .transfer-speeds {
+  flex-direction: row;
+  gap: 12px;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+#torrent-list.compact .torrent-actions {
+  flex-wrap: nowrap;
+  gap: 5px;
+}
+#torrent-list.compact .icon-button {
+  width: 26px;
+  height: 26px;
+  font-size: 0.7rem;
+}
+.list-tools {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.view-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  border: 1px solid #30333a;
+  border-radius: 7px;
+  background: transparent;
+  color: #666d78;
+}
+.view-toggle svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+.view-toggle:hover,
+.view-toggle[aria-pressed="true"] {
+  color: var(--text);
+  border-color: #4a505b;
+}
 .delete-action:hover:not(:disabled) {
   background: #3a2328;
   border-color: #5a3038;
@@ -1373,5 +1469,19 @@ input::placeholder {
   }
   .folder-input-row .button {
     margin-left: auto;
+  }
+}
+@media (max-width: 800px) {
+  #torrent-list.compact .torrent-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  #torrent-list.compact .torrent-name {
+    flex: 1 1 100%;
+  }
+  #torrent-list.compact progress {
+    flex: 1 1 60px;
+    width: auto;
   }
 }

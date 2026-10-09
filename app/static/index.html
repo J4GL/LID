@@ -100,14 +100,30 @@
             <span id="torrent-count" class="count">0</span>
           </h2>
           <div class="disk-widget" id="disk-widget" hidden></div>
-          <div class="route-legend">
-            <span
-              ><i class="blue-bg"></i
-              ><span data-i18n="list.direct">Direct</span></span
-            ><span
-              ><i class="red-bg"></i
-              ><span data-i18n="list.proxy">Proxy</span></span
+          <div class="list-tools">
+            <div class="route-legend">
+              <span
+                ><i class="blue-bg"></i
+                ><span data-i18n="list.direct">Direct</span></span
+              ><span
+                ><i class="red-bg"></i
+                ><span data-i18n="list.proxy">Proxy</span></span
+              >
+            </div>
+            <button
+              id="compact-toggle"
+              class="view-toggle"
+              type="button"
+              aria-pressed="false"
+              title="Compact view"
+              aria-label="Compact view"
+              data-i18n-title="list.compact"
+              data-i18n-aria="list.compact"
             >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M2 4h12M2 8h12M2 12h12" />
+              </svg>
+            </button>
           </div>
         </div>
         <div
